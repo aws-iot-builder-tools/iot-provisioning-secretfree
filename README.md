@@ -20,37 +20,37 @@ go to the **Demonstration** section.
   * [IoT Device](#iot-device)
   * [API Gateway](#api-gateway)
  * [Deployment](#deployment)
- * [Staging](#orgc2200b5)
- * [Processing](#orgc5e779d)
-* [System Implementation and Deployment](#org75cf315)
- * [Prerequisites](#org50804bf)
-  * [Certificate Issuer](#orgadd3c89)
-  * [Device](#orgff29540)
-  * [CloudFormation](#orge8d04de)
- * [AWS Lambda: Layer: pyOpenSSL](#orgaaaa270)
- * [AWS Lambda: Lambda Authorizer for API Gateway](#org6e7346b)
- * [AWS Lambda: Issuing ACM based certificates](#orgb7177d3)
- * [AWS Lambda: Issuing AWS IoT Core based certificates](#org346b60d)
- * [DynamoDB Global Table](#org3572e39)
+ * [Staging](#staging)
+ * [Processing](#processing)
+* [System Implementation and Deployment](#system-implementation-and-deployment)
+ * [Prerequisites](#prerequisites)
+  * [Certificate Issuer](#certificate-issuer)
+  * [Device](#device)
+  * [CloudFormation](#cloudformation)
+ * [AWS Lambda: Layer: pyOpenSSL](#aws-lambda:-layer:-pyopenssl)
+ * [AWS Lambda: Lambda Authorizer for API
+   Gateway](#aws-lambda:-lambda-authorizer-for-api-gateway)
+ * [AWS Lambda: Issuing ACM based
+   certificates](#aws-lambda:-issuing-acm-based-certificates)
+ * [AWS Lambda: Issuing AWS IoT Core based
+   certificates](#aws-lambda:-issuing-aws-iot-core-based-certificates)
+ * [DynamoDB Global Table](#dynamodb-global-table)
  * [API Gateway Endpoint, Resource, Method, Model, and
-   Response](#org7d5c793)
- * [Upload and Deployment](#org9ccc29c)
-* [Demonstration](#org19d011b)
- * [AWS Certificate Manager Provisioning](#orgda684e6)
-  * [Root Certificate Authority](#org292e32f)
-  * [Intermediate Certificate Authority](#org60d7ea3)
-  * [Device Issuer Certificate Authority](#orgd4e0dc4)
- * [Verifying the ACM Setup](#org688457e)
- * [Loading the Table with Test Data](#orgbf15e0a)
- * [Verifying the AWS API Gateway Processing](#org087ee8b)
- * [Running the Texas Instruments CC3220SF Demo](#orgde787bb)
+   Response](#apit-gateway-endpoint,-resource,-method,-model,-and-response)
+ * [Upload and Deployment](#upload-and-depliyment)
+* [Demonstration](#demonstration)
+ * [AWS Certificate Manager Provisioning](#aws-certificate-manager-provisioning)
+  * [Root Certificate Authority](#root-certificate-authority)
+  * [Intermediate Certificate Authority](#intermediate-certificate-authority)
+  * [Device Issuer Certificate Authority](#device-issuer-certificate-authority)
+ * [Verifying the ACM Setup](#verifying-the-acm-setup)
+ * [Loading the Table with Test Data](#loading-the-table-with-test-data)
+ * [Verifying the AWS API Gateway Processing](#verifying-the-aws-api-gateway-processing)
+ * [Running with an Edge Device](#running-with-an-edge-device)
 
 ## License Summary
 
 This sample code is made available under the MIT-0 license. See the LICENSE file.
-
-## Brief
-
 
 # Overview
 
@@ -79,13 +79,12 @@ import to the AWS Cloud.
 
 This paper defines a Proof of Concept and does not in any way infer
 that the mechanisms decribed herein have been hardened and are
-production ready.  Further, in the demo section, this paper
-describes the design and operation for IoT credential provisioning
-with respect to the functionality present in the Texas Instruments
-CC32xx microcontroller family.  While not the only mechanism
-applicable to this microcontroller, this process presents you with
-the flexibility and low logistical friction that benefits our mutual
-customers.
+production ready.  Further, in the demo section, this paper describes
+the design and operation for IoT credential provisioning with respect
+to the functionality present in the Texas Instruments CC32xx
+microcontroller family.  While not the only mechanism applicable to
+this microcontroller, this process presents you with the flexibility
+and low logistical friction that benefits customers.
 
 # System Design
 
@@ -93,98 +92,118 @@ The system design defines and puts into context the components that
 fulfill roles in the certificate provisioning process in the AWS
 Cloud.  The following diagram describes the system components and
 their relationships.  Each component has a letter which labels the
-component described in the following section **System Components**. Each
-component has at least one relationship which at least one
-number. The number serves as a label for an action, usually
+component described in the following section **System
+Components**. Each component has at least one relationship which at
+least one number. The number serves as a label for an action, usually
 directional, between two components.
 
-                                                                                                                                  ┌────────────────────┐
-                                                                                                                                  │         F.         │
-                                                                                                                     6            │        S3:         │
-                                                                                                          ┌───────────────────────│     PubkeyData     │
-                                                                                                          │                       │                    │
-                                                                                                          │                       └────────────────────┘
-                                                                 ┌─────────────────────┐       ┌─────────────────────┐            ┌────────────────────┐
-                                                                 │         D.          │       │         E.          │            │         G.         │
-                                                                 │     API Gateway     │   4   │       Lambda:       │     5      │     DynamoDB:      │
-                                                                 │  Custom Authorizer  │───────│  CertificateIssuer  │────────────│     PubkeyData     │
-                                                                 │                     │       │                     │            │                    │
-                                                                 └─────────────────────┘       └─────────────────────┘            └────────────────────┘
-                                                                                                                                         │                                                                           
-                                                                            │ 3                                                                         
-                                                                            │                                                                           
-    ┌─────────────────────┐       ┌──────────────────────┐       ┌─────────────────────┐       ┌─────────────────────┐            ┌────────────────────┐
-    │                     │       │          B.          │       │         C.          │       │         H.          │            │                    │
-    │         A.          │   1   │     API Gateway      │   2   │     API Gateway     │   7   │       Lambda:       │     8      │         I.         │
-    │      CC3225SF       │───────│         PUT:         │───────│        PUT:         │───────│  CertificateIssuer  │────────────│   ACM Private CA   │
-    │                     │  12   │  /issue-certificate  │  11   │ /issue-certificate  │  10   │                     │     9      │                    │
-    └─────────────────────┘       └──────────────────────┘       └─────────────────────┘       └─────────────────────┘            └────────────────────┘
-               │                                                                                          │                                             
-               │                                                                                          │  13                                         
-               │                                                                                          │                                             
-               │                                                                               ┌─────────────────────┐                                  
-               │                                                                               │         J.          │                                  
-               │                                                                               │    AWS IoT Core:    │                                  
-               │                                                                           ┌───│  Identity Service   │                                  
-               │                                                                           │   │                     │                                  
-               │                                                                           │   └─────────────────────┘                                  
-               │                                                                         17│              │                                             
-               │                                                                           │              │  14                                         
-               │                                                                           │              │                                             
-               │                                                  ┌─────────────────────┐  │   ┌─────────────────────┐                                  
-               │                                                  │         L.          │  │   │         K.          │                                  
-               │              16                                  │    AWS IoT Core:    │  │   │    AWS IoT Core:    │                                  
-               └──────────────────────────────────────────────────│   Device Gateway    │──┘   │       Events        │                                  
-                                                                  │                     │      │                     │                                  
-                                                                  └─────────────────────┘      └─────────────────────┘                                  
-                                                                                                          │                                             
-                                                                                                          │  15                                         
-                                                                                                          │                                             
-                                                                                               ┌─────────────────────┐                                  
-                                                                                               │         L.          │                                  
-                                                                                               │    AWS IoT Core:    │                                  
-                                                                                               │      Registry       │                                  
-                                                                                               │                     │                                  
-                                                                                               └─────────────────────┘                                  
+Note that there is consideration for latent certificate retrieval in
+the case where the response payload may not be retrieved sufficiently
+by the client where instead of the certificate response there is a
+pre-signed S3 URL response where the certificate can be retrieved with
+the https client and retried in the case of poor network connectivity.
+
+Note that there is consideration for provisioning parity to occur
+between ACM PCA and AWS IoT Core provisioning where all provisioning
+aspects occur at the time of certificate provisioning. The challenge
+in this case is the latent replication of provisioned artifacts across
+regions when the client acquires a regional endpoint that may not yet
+have the required resources. Further, it may cause complication with
+the global provisioning pattern.
+
+## Issuing with ACM PCA
+
+The execution architecture for issuing certificates using ACM PCA is
+defined by the following diagram.
+
+![Secretless-ACMPCA.png](img/Secretless-ACMPCA.png)
+
+
+1. The PKI Admin would have received a CSR from ACM PCA and a *parent
+   issuer* then issues the certificate.  The PKI Admin then submits
+   the issued certificate to ACM PCA.
+2. The PKI Admin must register the issued CA certificate to every
+   region where there device may connect.
+3. The "device admin" is an abstract role for anyone who has the
+   accountability for retrieving the device-id/pubkey payload from the
+   manufacturing site and importing those pairs to DynamoDB.
+4. The device is powered on, and the device notices that there is no
+   provisioned certificate to a slot on the secure serialized flash.
+   This triggers the routine for constructing the CSR according the
+   product's design. The CSR is POST to API Gateway as a custom header
+   value device-csr to endpoint method `/new`.
+5. API Gateway received the POST and identifies the method as being
+   configured with an Authorizer.  The header value (the CSR) is
+   passed to the authorizer for evaluation. The authorizer will read
+   the CSR subject value for CN for the device ID.
+6. The lambda function attempts to retrieve the public key for the
+   device-id enscribed to the CN value. DynamoDB returns the value
+   when the device-id exists.  Upon receiving the public key value,
+   the lambda function compares that to the CSR signature's public key
+   value.  When the public key compares favorably, the lambda function
+   issues a 200 response.  Otherwise:  404 is issued when the
+   relating pubkey to the device-id is not found, and an access denied
+   (GET CODE) when the key does not compare favorably.
+7. When the authorizer returns a 200, then the method invokes the
+   lambda function responsible for issuing the certificate.  The very
+   same CSR is passed along to the lambda function.
+8. The AWS Lambda function passes the CSR to ACM PCA for a target CA.
+   When all subject line and issuance duration requirements have been
+   met, then ACM PCA issues the certificate. Certificate issuance
+   may take several seconds, so the lambda function waits until
+   issuance completes and retrieves the payload.  The lambda function
+   returns the certificate payload under code 200, and returns empty
+   string with code 500 otherwise.  The reason for 500 is that it is
+   expected that ACM PCA would issue the certificate if all conditions
+   are met.  API Gateway consumes the response and passes it along to
+   the client; the client should interrogate that a 200 or otherwise
+   has been received, and upon a 200 persist the payload to the
+   appropriate nonvolatile memory resource.
+9. The device recogizes that there is a client certificate available
+   to use for authentication. The client attempts to connect to the
+   AWS IoT Core endpoint for the first time.
+   
+   *Note*: there is room for customization in the payload response
+   from API Gateway to also include the region-sensitive connectivity
+   endpoint.   This value should be saved to NVM for future use.  When
+   connecting to AWS IoT Core, the system 
+10. In the case where the certificate is not registered as active with
+    AWS IoT Core, the JITP or JITR process occurs.  The diagram
+    expresses the JITP process for simplicity, but you might require
+    JITR when registration has requirements beyond the JITP
+    capabilities. 
+11. Upon successful JITP or JITR interrogation, the object
+    provisioning occurs so that all required and accessory objects are
+    instantiated to enable IoT Core authorization as well as future
+    indexing and jobs through Thing Group attribution.
 
 
 
-## System Components
+## Issuing with AWS IoT Core
 
+The execution architecture for issuing certificates using AWS IoT Core
+is defined by the following diagram.  Note that issuing certificates
+using this method precludes you using the global provisioning pattern
+so it should not be considered for large scale provisioning where
+global connectivity and resiliency is required.
 
-<a id="org0cd8e72"></a>
+Note that the authorization steps 1-5 remain the same as ACM PCA
+issuance steps 1-6 (with the exception of PKI admin activities) so
+they will not be restated here.
 
-### IoT Device
+![Secretless-IoT.png](img/Secretless-IoT.png)
 
-#### A Note on the Reference Implementation
-
-The Texas Instruments CC32xx is a dual-core Cortex-M4F
-microcontroller with a unique architecture whereby one core is
-allocated to user applications and the other core is allocated for
-the Network Processor (NWP).  The NWP includes crypto, serialized
-secure flash, http client/server libraries, and a Wi-Fi
-facility. The NWP is operated by implementing programs that use
-the TI SimpleLink SDK.
-
-The unique architecture motivates the credential provisioning
-processes described in this paper.  The NWP manages an immutable
-root of trust, provides storage for client certificates, performs
-crypto and X.509 operations that enable provisioning automation
-and TLS 1.2 negotiation, and ensures that functions that typically
-take significant processing such as secure sockets and the TCP/IP
-stack can be separated from the user application, which enables
-better opportunity for fine tuning user application operations.
-
-### B. API Gateway
-
-API Gateway is used to simplify the way we describe the REST
-endpoint and its operation between the internet and functionality
-that issues the device credential.  The REST endpoint must have a
-way to describe a valid payload (both raw and by headers), and how
-the data relates to authentication (see system component C) as
-well as propagating the payload to the AWS Lambda function
-responsible for issuing the certificate.
-
+6. Upon receiving the CSR, the certificate issuer lambda creates the
+   certificate with AWS IoT Core using the CSR.  Once done, the lambda
+   creates the Thing based on the device-id value represented by the
+   CN in the certificate subject.  The policy most often is consistent
+   across all things in the particular product line. If already found,
+   the certificate is paired with the found policy; otherwise, the
+   lambda creates the policy according to the application's
+   requirements and links.  Further invocation does not require a
+   policy.
+7. At this point, all components are created and the certificate has
+   been activated, so further connectivity occurs normally.
 ## Deployment
 
 In the deployment process, infrastructure is deployed and the
@@ -194,17 +213,6 @@ is an alternate deployment configuration where the certificate
 issuer is AWS IoT Core instead of ACM PCA.  In the former case, the
 constraint is the certificate can not be deployed to regions
 globally.
-
-
-## Staging
-
-In the staging process, private keys are loaded to S3, and
-correlating pointers and MCU IDs are recorded to DynamoDB.
-
-## Processing
-
-In this section, the diagram for normal runtime processing for
-certificate generation and provisioning is explained.
 
 # System Implementation and Deployment
 
@@ -1011,166 +1019,23 @@ This script is named get-pcmcia-ca-arn.sh in scripts/ for your convenience.
 The first argument, which is
 the ACM PCA CA Arn, must be applied to the command line, for example:
 
-    ./build-and-upload.sh ${CertificateAuthorityArn}
+```bash
+./build-and-upload.sh ${CertificateAuthorityArn}
+```
 
 And if you want to override the SKUNAME and possibly the target
 REGION, the command line would be configured like:
 
-    SKUNAME=superUniquePrefix REGION=us-west-2 ./build-and-upload.sh ${CertificateAuthorityArn}
-
-The script first starts off with setting defaults and identifying
-if this is an ACM PCA deployment.
-
-    P=$(pwd)/$(dirname $0)
-    
-    if test -z $1; then
-        ACMPCA=0
-    else
-        ACMPCA=1
-    fi
-    
-    if test -f ~/.aws/config; then
-        DEFAULT_REGION=$(grep ^region ~/.aws/config | tr -s ' = ' ' ' | cut -d' ' -f2)
-    fi
-    
-    REGION=${REGION:=${DEFAULT_REGION}}
-    PREFIX=${PREFIX:=${USER}}
-    BUCKET=${PREFIX}-iot-secretfree-cfn
-    
-    echo REGION: ${REGION}
-    echo PREFIX: ${PREFIX}
-    echo ACMPCA: ${ACMPCA}
-    echo BUCKET: ${BUCKET}
-    
-    echo ""
-    
-    echo Building Lambda layer
-    ${P}/package-lambda-layer-pyopenssl.sh
-    
-    echo Building Authorizer Lambda function
-    ${P}/package-lambda-authorizer.sh
-    
-    echo Building ACMPCA issuer Lambda function
-    ${P}/package-lambda-issuer-acmpca.sh
-    
-    echo Building AWS IoT Core issuer Lambda function
-    ${P}/package-lambda-issuer-iotcore.sh
-    
-    echo Verifying staging S3, making if necessary 
-    bucket_check=$(aws s3api head-bucket --bucket ${BUCKET} 2>&1 | xargs echo | sed -e 's/.*(\(...\)).*/\1/')
-    
-    echo Check completed.
-    
-    if test "${bucket_check}" -eq "404"; then
-      echo The bucket prefix you have chosen is OK.
-      make_bucket=1
-    elif test "${bucket_check}" -eq "403"; then
-      echo The bucket prefix you have chosen is taken by another AWS Account.
-      echo Choose another.
-      exit 1
-    else
-      echo The bucket prefix you have chosen already exists in your account.  We will use it!
-      make_bucket=0
-    fi
-    
-    
-    if test ${make_bucket} == 1; then
-        echo Creating S3 bucket [${BUCKET}]
-        bucket=$(aws s3api create-bucket --output text \
-                     --bucket "${BUCKET}" \
-                     --query Location)
-        if test $? != 0; then
-            echo Error creating bucket.  It could have been an itermittent problem.
-            echo Please try again.
-        fi
-    
-        my_ip=$(curl https://ipinfo.io/ip --stderr /dev/null)
-    
-        cat <<EOF > /tmp/bucket-policy.json
-    {
-      "Version": "2012-10-17",
-      "Id": "S3PolicyId1",
-      "Statement": [
-        {
-          "Sid": "IPAllow",
-          "Effect": "Allow",
-          "Principal": "*",
-          "Action": "s3:*",
-          "Resource": "arn:aws:s3:::${BUCKET}/*",
-          "Condition": {
-            "IpAddress": {
-              "aws:SourceIp": "${my_ip}/32"
-            }
-          }
-        }
-      ]
-    }
-    EOF
-    
-        echo Constraining bucket access to this specific device
-    
-        aws s3api put-bucket-policy --bucket ${BUCKET} --policy file:///tmp/bucket-policy.json
-    
-    fi
-    
-    echo Staging files to S3
-    aws s3 cp ${P}/../cfn/secretfree.yml \
-        s3://${BUCKET}/secretfree.yml
-    
-    aws s3 cp ${P}/../tarz/lambda-layer-pyopenssl.zip \
-        s3://${BUCKET}/lambda-layer-pyopenssl.zip
-    
-    aws s3 cp ${P}/../tarz/lambda-authorizer.zip \
-        s3://${BUCKET}/lambda-authorizer.zip
-    
-    aws s3 cp ${P}/../tarz/lambda-issuer-acmpca.zip \
-        s3://${BUCKET}/lambda-issuer-acmpca.zip
-    
-    aws s3 cp ${P}/../tarz/lambda-issuer-iotcore.zip \
-        s3://${BUCKET}/lambda-issuer-iotcore.zip
-    
-    echo Invoking CloudFormation
-    
-    URL=https://${BUCKET}.s3.amazonaws.com/secretfree.yml
-    stack_id=$(aws cloudformation create-stack --output text \
-                   --stack-name ${PREFIX}-iot-provisioning-secretfree \
-                   --template-url "${URL}" \
-                   --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
-                   --parameters ParameterKey=TemplateBucket,ParameterValue=${BUCKET} \
-                                ParameterKey=SkuName,ParameterValue=${SKUNAME} \
-                                ParameterKey=AcmPcaCaArn,ParameterValue=${ACMPCA} \
-                   --query StackId)
-    
-    if test -z "${stack_id}"; then
-        echo ERROR cloudformation invocation failed
-        exit 1
-    fi
-    
-    echo stack_id is [${stack_id}]
-    deployment_status=CREATE_IN_PROGRESS
-    
-    while test "${deployment_status}" == "CREATE_IN_PROGRESS"; do
-        echo deployment status: $deployment_status ... wait three seconds
-        sleep 3
-        
-        deployment_status=$(aws cloudformation describe-stacks \
-                                --stack-name ${PREFIX}-iot-provisioning-secretfree \
-                                --query "Stacks[?StackName=='${PREFIX}-iot-provisioning-secretfree'].StackStatus" \
-                                --output text)
-    done
-    
-    echo deployment status: $deployment_status
-
-
-<a id="org19d011b"></a>
+```bash
+SKUNAME=superUniquePrefix REGION=us-west-2 ./build-and-upload.sh ${CertificateAuthorityArn}
+```
 
 # Demonstration
 
-First, choose if you will be doing ACM PCA or AWS IoT based
-certificate issuing. 
-
-
-<a id="orgda684e6"></a>
+The automation for deploying the code installs both ACM PCA and AWS
+IoT based issuance Lambdas. The API Gateway endpoint you invoke
+determines the issuer.  If you will be using AWS IoT as the issuer,
+skip to the [Test Data Load](#test-data-load) section.
 
 ## AWS Certificate Manager Provisioning
 
@@ -1200,29 +1065,52 @@ We first need to create the certificate hierarchy (roughly taken
 from Bulletproof SSL and TLS - for more information, check that
 book).
 
-
-<a id="org292e32f"></a>
-
 ### Root Certificate Authority
 
-Create the base directory.
+When creating a root certificate, this means it's the root certificate
+for your organziation. Usually, you will want a verifiable issuer
+such as Amazon, Thawte, etcetera.  Since we would not want to do this
+for prototyping, the root authority will be self-signed.  **Do not do
+this for production workloads. You should have a verifiable root CA
+issuer give you an intermediate that represents your entity.**
 
-    #! /bin/bash
-    rel=$(dirname $0)
-    cd $rel
-    mkdir -p ti-provisioning/root-ca
-    cd ../root-ca
-    mkdir certs db private
-    chmod 700 private
-    touch db/index
-    openssl rand -hex 16 > db/serial
-    echo 1001 > db/crlnumber
+#### Root Certificate Short Story
 
-Create the root-ca.conf file.  There is a challenge here that you
-need to be aware of.  When you are issuing CSRs for clients, the
-policy must meet the demands. For example, if you want to put
-Locality (L) in the Subject, it must be defined in this OpenSSL
-configuration as at least optional.
+To initialize the root authority, use the `demo/script/root-ca.sh`
+script. The script does not require any parameters if you want to use
+the demo defaults (see [Long Story](#root-certificate-long-story)).
+
+Jump to the [Intermediate Certificate
+Authority](intermediate-certificate-authority) section when completed.
+
+#### Root Certificate Long Story
+
+Create the base directory.  You can create the root directory name
+whatever you like, but let's pretend you work for a company named
+`widgies` with product name `widgiot`.  Note that we are working in a
+UNIX-like environment so if you're running Windows, instantiate a
+small EC2 instance to do your work.
+
+```bash
+cd ~ && mkdir -p provisioning/root-ca
+cd provisioning/root-ca
+mkdir certs db private
+chmod 700 private
+touch db/index
+openssl rand -hex 16 > db/serial
+echo 1001 > db/crlnumber
+```
+
+Create the root-ca.conf file.  There is a challenge here that you need
+to be aware.  When you are issuing CSRs for clients, the policy at the
+CA level must meet the demands at the CSR level. For example, if you
+want to put Locality (L) in the Subject, it must be defined in this
+OpenSSL configuration as at least optional.  Accordingly, while we may
+not issue the CA with locality, the client certificate *may* always
+issue with locality.
+
+This is an example Root CA using a domain that the author owns.  You
+will need to modify this template with your target domain.
 
     [default]
     name                    = root-ca
@@ -1305,49 +1193,59 @@ configuration as at least optional.
     keyUsage                = critical,digitalSignature
     subjectKeyIdentifier    = hash
 
+##### Root CA: quick
+
+
+##### Root CA: details
+
 Create the private key for the Root CA.
 
-    openssl req -new                    \
-            -config root-ca.conf        \
-            -out root-ca.csr            \
-            -keyout private/root-ca.key \
+```bash
+openssl req -new                         \
+            -config  root-ca.conf        \
+            -out     root-ca.csr         \
+            -keyout  private/root-ca.key \
             -passout pass:nopass
+```
 
-Create the self-signed certificate.
+Create the self-signed certificate.  Note the **selfsign** flag.  In
+production, you will NOT do this.
 
-    openssl ca -selfsign \
-        -config root-ca.conf \
-        -in root-ca.csr \
-        -out root-ca.crt \
-        -extensions ca_ext \
-        -batch \
-        -passin pass:nopass
+```bash
+openssl ca -selfsign            \
+           -config root-ca.conf \
+           -in root-ca.csr      \
+           -out root-ca.crt     \
+           -extensions ca_ext   \
+           -batch               \
+           -passin pass:nopass
+```
 
 Create the private key and CSR for OCSP.
 
-    openssl req -new \
-        -newkey rsa:2048 \
-        -subj "/C=US/O=Automatra/CN=OCSP Root Responder" \
-        -keyout private/root-ocsp.key \
-        -out root-ocsp.csr \
-        -batch \
-        -passout pass:nopass
+```bash
+openssl req -new                                                \
+            -newkey   rsa:2048                                  \
+            -subj    "/C=US/O=Automatra/CN=OCSP Root Responder" \
+            -keyout  private/root-ocsp.key                      \
+            -out     root-ocsp.csr                              \
+            -batch                                              \
+            -passout pass:nopass
+```
 
 Issue the OCSP certificate.
 
-    openssl ca \
-        -config root-ca.conf \
-        -in root-ocsp.csr \
-        -out root-ocsp.crt \
-        -extensions ocsp_ext \
-        -days 30 \
-        -batch \
-        -passin pass:nopass
+```bash
+openssl ca -config     root-ca.conf  \
+           -in         root-ocsp.csr \
+           -out        root-ocsp.crt \
+           -extensions ocsp_ext      \
+           -days       30            \
+           -batch                    \
+           -passin     pass:nopass
+```
 
 The Root CA and OCSP certificate has been issued.
-
-
-<a id="org60d7ea3"></a>
 
 ### Intermediate Certificate Authority
 
@@ -1357,15 +1255,20 @@ purposes.
 
 First, initialize the database for the Intermediate CA.
 
-    cd ../intermediate-ca
-    mkdir certs db private
-    chmod 700 private
-    touch db/index
-    openssl rand -hex 16 > db/serial
-    echo 1001 > db/crlnumber
+```bash
+cd ~ && mkdir -p provisioning/intermediate-ca
+cd provisioning/intermediate-ca
+mkdir certs db private
+chmod 700 private
+touch db/index
+openssl rand -hex 16 > db/serial
+echo 1001 > db/crlnumber
+```
 
 Create the configuration file for the Intermediate CA representing
-the WidgIoT product line.
+the WidgIoT product line.  The meaning of this entire configuration is
+beyond the scope of this README and should be analyzed in the
+aforementioned book.
 
     [default]
     name                    = widgiot-ca
@@ -1375,7 +1278,6 @@ the WidgIoT product line.
     ocsp_url                = http://ocsp.$name.$domain_suffix:9081
     default_ca              = ca_default
     name_opt                = utf8,esc_ctrl,multiline,lname,align
-    
     
     [ca_dn]
     countryName             = "US"
@@ -1421,6 +1323,7 @@ the WidgIoT product line.
     basicConstraints        = critical,CA:true
     keyUsage                = critical,keyCertSign,cRLSign
     subjectKeyIdentifier    = hash
+
     [sub_ca_ext]
     authorityInfoAccess     = @issuer_info
     authorityKeyIdentifier  = keyid:always
@@ -1470,40 +1373,58 @@ the WidgIoT product line.
 Create the private key and generate the CSR for the WidgIoT
 product line.
 
-    openssl req -new \
-        -config widgiot-ca.conf \
-        -out widgiot-ca.csr \
-        -keyout private/widgiot-ca.key \
-        -batch \
-        -passout pass:nopass
+```bash
+openssl req -new                           \
+            -config widgiot-ca.conf        \
+            -out widgiot-ca.csr            \
+            -keyout private/widgiot-ca.key \
+            -batch                         \
+            -passout pass:nopass
+```
 
 Have the root CA issue the intermediate CA.
 
-    cd ../root-ca/
-    openssl ca \
-        -config root-ca.conf \
-        -in ../widgiot-ca/widgiot-ca.csr \
-        -out widgiot-ca.crt \
-        -extensions sub_ca_ext \
-        -batch \
-        -passin pass:nopass
-    cp widgiot-ca.crt ../widgiot-ca
-    cp root-ca.crt ../widgiot-ca #for ease of operation when issuing aws cert
-
-
-<a id="orgd4e0dc4"></a>
+```bash
+cd ../root-ca/
+openssl ca -config root-ca.conf \
+           -in ../widgiot-ca/widgiot-ca.csr \
+           -out widgiot-ca.crt \
+           -extensions sub_ca_ext \
+           -batch \
+           -passin pass:nopass
+cp widgiot-ca.crt ../widgiot-ca
+cp root-ca.crt ../widgiot-ca #for ease of operation when issuing aws cert
+```
 
 ### Device Issuer Certificate Authority
 
 Create and change to directory for managing the ACM PCA issued
 certificates.
 
-    cd ..
-    mkdir aws-ca
-    cd aws-ca
+```bash
+cd ~ && mkdir -p provisioning/widgiot-ca
+cd provisioning/widgiot-ca
+```
 
-Create an S3 bucket policy for the CRL lists that will be used by
-the cloudy private CA.
+Create an S3 bucket policy for the CRL lists that will be used by the
+cloudy Private CA.
+
+In your shell, define your `PREFIX` name.  Amazon S3 is a *global*
+service which means bucket names must me globally unique.  In this
+case, we will use the author's GitHub ID.
+
+```bash
+PREFIX=rpcme
+```
+
+The bucket policy must applied to constrain access to ACM PCA since,
+at least at this time, only ACM PCA requires access.  Note that PREFIX
+and REGION are variant based on your semantic meaning and intent.
+Meaning, PREFIX is wholly variant based on your product.  The REGION
+is variant based on your primary REGION; even though Amazon S3 is a
+global service, the 'seeded' region should be named (or else it is
+inferred).
+
 
     {
       "Version": "2012-10-17",
@@ -1520,8 +1441,8 @@ the cloudy private CA.
             "s3:GetBucketLocation"
           ],
           "Resource": [
-            "arn:aws:s3:::elberger-acm-pca-crl-useast1-widgiot/*",
-            "arn:aws:s3:::elberger-acm-pca-crl-useast1-widgiot"
+            "arn:aws:s3:::PREFIX-acm-pca-crl-REGION-widgiot/*",
+            "arn:aws:s3:::PREFIX-acm-pca-crl-REGION-widgiot"
           ]
         }
       ]
@@ -1529,16 +1450,20 @@ the cloudy private CA.
 
 Create the bucket.
 
-    aws s3api create-bucket \
-        --bucket "elberger-acm-pca-crl-useast1-widgiot" \
-        --query Location \
-        --region us-east-1
+```bash
+BUCKET=${PREFIX}-acm-pca-crl-${REGION}-widgiot
+
+aws s3api create-bucket --bucket ${BUCKET} 
+                        --query  Location  \
+                        --region ${REGION}
+```
 
 Apply the policy.
 
-    aws s3api put-bucket-policy \
-        --bucket elberger-acm-pca-crl-useast1-widgiot \
-        --policy file://../conf/s3-useast1-widgiot-ca.json
+```bash
+aws s3api put-bucket-policy --bucket ${BUCKET} \
+                            --policy file://../conf/s3-${REGION}-widgiot-ca.json
+```
 
 Create the input text for the CA configuration.
 
@@ -1562,97 +1487,120 @@ Create the input text for the CA revocation list.
         "Enabled": true,
         "ExpirationInDays": 7,
         "CustomCname": "some_name.crl",
-        "S3BucketName": "elberger-acm-pca-crl-useast1-widgiot"
+        "S3BucketName": "PREFIX-acm-pca-crl-REGION-widgiot"
       }
     }
+
+You are responsible for ensuring that the input text for the
+revocation list is applicable.
+
 
 Create a new CA for us-east-1.  Note documentation at
 <https://docs.aws.amazon.com/acm-pca/latest/userguide/PcaCreateCa.html>
 says to use —tags but it's not a valid flag for this operation.
 
-    CERTIFICATE_AUTHORITY_ARN=$(aws acm-pca create-certificate-authority --output text\
+```bash
+CRT_AUTH_ARN=$(aws acm-pca create-certificate-authority --output text \
                                     --certificate-authority-configuration file://useast1-widgiot-config.txt \
                                     --revocation-configuration file://useast1-widgiot-revoke-config.txt \
                                     --certificate-authority-type "SUBORDINATE" \
                                     --idempotency-token 98256344 \
                                     --region us-east-1 \
                                     --query CertificateAuthorityArn)
+```
 
 Get the CSR from the cloud.  note that the CertificateAuthorityArn
 will be unique and the previous command should capture the output
 and have it applied to the forthcoming command.
 
+```bash
     aws acm-pca get-certificate-authority-csr \
-        --certificate-authority-arn ${CERTIFICATE_AUTHORITY_ARN} \
+        --certificate-authority-arn ${CRT_AUTHARN} \
         --output text \
         --region us-east-1 \
         > useast1-widgiot-ca.csr
-        #+end_srd
+```
     
-        Issue the CA certificate using the Intermediate CA.
+Issue the CA certificate using the Intermediate CA.
     
-        #+begin_src bash :mkdirp yes :tangle ../../iot-provisioning-secretfree/demo/script/pki-config.sh
-    
-    cd ../widgiot-ca
-    
-    openssl ca \
-        -config widgiot-ca.conf \
-        -in ../aws-ca/useast1-widgiot-ca.csr \
-        -out useast1-widgiot-ca.crt \
-        -extensions sub_ca_ext \
-        -batch \
-        -passin pass:nopass
-    
-    openssl x509 -in useast1-widgiot-ca.crt -out useast1-widgiot-ca.pem -outform PEM
-    
-    openssl x509 -in widgiot-ca.crt -out widgiot-ca.pem -outform PEM
-    
-    openssl x509 -in ../root-ca/root-ca.crt -out root-ca.pem -outform PEM
-    
-    cat widgiot-ca.pem root-ca.pem >  useast1-widgiot-ca-chain.pem
 
-Upload
+```bash
+cd ../widgiot-ca
+    
+openssl ca -config     widgiot-ca.conf                    \
+           -in         ../aws-ca/${REGION}-widgiot-ca.csr \
+           -out        ${REGION}-widgiot-ca.crt           \
+           -extensions sub_ca_ext                         \
+           -batch -passin pass:nopass
+    
+openssl x509 -in      ${REGION}-widgiot-ca.crt \
+             -out     ${REGION}-widgiot-ca.pem \
+             -outform PEM
 
-    aws acm-pca import-certificate-authority-certificate \
-        --certificate-authority-arn  ${CERTIFICATE_AUTHORITY_ARN} \
-        --certificate file://useast1-widgiot-ca.pem \
-        --certificate-chain file://useast1-widgiot-ca-chain.pem \
-        --region us-east-1
+openssl x509 -in widgiot-ca.crt \
+             -out widgiot-ca.pem \
+             -outform PEM
+    
+openssl x509 -in      ../root-ca/root-ca.crt \
+             -out     root-cpem \
+             -outform PEM
+    
+cat widgiot-ca.pem root-ca.pem > ${REGION}-widgiot-ca-chain.pem
+```
+
+Two distinct events have happened at this point.  First, the parent
+issuer granted the CA under the authorized security context. NOTE that
+this event is fraught with peril and must be WHOLLY portected.
+
+Second, the authoritative chain has been concatenated.  This is a
+lesser event which is more administrative but underlines the authority
+chain.  ACM PCA is concerned with the CA and the authority chain.
+
+```bash
+
+aws acm-pca import-certificate-authority-certificate \
+            --certificate-authority-arn  ${CERTIFICATE_AUTHORITY_ARN} \
+            --certificate                file://${REGION}-widgiot-ca.pem \
+            --certificate-chain          file://${REGION}-widgiot-ca-chain.pem \
+            --region                     ${REGION}
+```
 
 Import the CA to AWS IoT Core.  Start by requesting an import
 code.
 
-    
-    code=$(aws iot get-registration-code \
+```bash
+code=$(aws iot get-registration-code \
                --query registrationCode \
-               --region us-east-1 --output text \
+               --region ${REGION} --output text \
                --query registrationCode )
+```
 
 Construct the CSR with the import code.
 
+```bash
+openssl genrsa -out useast1-verification-request.key 2048
     
-    openssl genrsa -out useast1-verification-request.key 2048
-    
-    openssl req -new \
-            -key useast1-verification-request.key \
-            -out useast1-verification-request.csr \
+openssl req -new \
+            -key ${REGION}-verification-request.key \
+            -out ${REGION}-verification-request.csr \
             -subj "/C=US/ST=VA/L=Anywhere/O=Automatra/OU=WidgIoT us-east-1/CN=$code"
     
-    # request the certificate from ACM
+# request the certificate from ACM
             
-    CERTIFICATE_ARN=$(aws acm-pca issue-certificate \
-                          --certificate-authority-arn  ${CERTIFICATE_AUTHORITY_ARN} \
-                          --csr file://useast1-verification-request.csr \
-                          --signing-algorithm "SHA256WITHRSA" \
-                          --validity Value=364,Type="DAYS" \
-                          --idempotency-token 1234     \
-                          --region us-east-1 --output text \
-                          --query CertificateArn)
+CERTIFICATE_ARN=$(aws acm-pca issue-certificate \
+                      --certificate-authority-arn  ${CERTIFICATE_AUTHORITY_ARN} \
+                      --csr file://useast1-verification-request.csr \
+                      --signing-algorithm "SHA256WITHRSA" \
+                      --validity Value=364,Type="DAYS" \
+                      --idempotency-token 1234     \
+                      --region us-east-1 --output text \
+                      --query CertificateArn)
     
-    aws acm-pca get-certificate \
-        --certificate-authority-arn  ${CERTIFICATE_AUTHORITY_ARN} \
+aws acm-pca get-certificate \
+--certificate-authority-arn  ${CERTIFICATE_AUTHORITY_ARN} \
         --certificate-arn ${CERTIFICATE_ARN} \
-        --output text --region us-east-1 > verification.pem
+        --output text --region ${REGION} > verification.pem
+```
 
 Before adding the CA to AWS IoT Core, there are several things
 that must be put into place first:
@@ -1666,6 +1614,7 @@ that must be put into place first:
 
 The IoT Policy is constrained to device shadow and ephemeral
 topic.
+
 
     {
       "Version": "2012-10-17",
@@ -1747,17 +1696,15 @@ Core. When configuring your application to be global using the
 multi-region provisioning pattern, this CA must be registered in
 every region.
 
-    aws iot register-ca-certificate \
-                   --ca-certificate file://useast1-widgiot-ca.pem \
-                   --verification-cert file://verification.pem \
-                   --set-as-active \
-                   --query certificateArn \
-                   --output text --region us-east-1
+```bash
+aws iot register-ca-certificate --ca-certificate file://useast1-widgiot-ca.pem \
+                                --verification-cert file://verification.pem \
+                                --set-as-active \
+                                --query certificateArn \
+                                --output text --region ${REGION}
+```
 
-
-<a id="org688457e"></a>
-
-## Verifying the ACM Setup
+### Verifying the ACM Setup
 
 In this test, you issue a client certificate from ACM PCA by
 constructing a private key and CSR manually on your workstation to
@@ -1768,38 +1715,43 @@ up the Thing and Policy with the certificate.
 **Note**: The Just in Time Provisioning (JITP) process will be used in
 the next section when evaluating the end-to-end process.
 
-    CERTIFICATE_AUTHORITY_ARN=$1
-    cd ~/ti-provisioning
-    mkdir test_client_1
-    cd test_client_1
-    openssl genrsa -out test_client_1.key 2048
-    openssl req -new \
+```bash
+CERTIFICATE_AUTHORITY_ARN=$1
+cd ~/ti-provisioning
+mkdir test_client_1
+cd test_client_1
+openssl genrsa -out test_client_1.key 2048
+openssl req -new \
             -key test_client_1.key \
             -out test_client_1.csr \
             -subj "/C=US/ST=VA/L=Anywhere/O=Automatra/OU=WidgIoTus-east- 1/CN=test_client_1"
+```
 
 Submit the CSR to ACM and retrieve the certificate.  In the end to
 end, the Lambda function performs this act after signature
 verification.
 
-    tc1_cert_arn=$(aws acm-pca issue-certificate \
-                       --certificate-authority-arn ${CERTIFICATE_AUTHORITY_ARN} \
-                       --csr file://test_client_1.csr \
-                       --signing-algorithm "SHA256WITHRSA" \
-                       --validity Value=364,Type="DAYS" \
-                       --idempotency-token 1234     \
-                       --region us-east-1 --output text --query CertificateArn)
+```bash
+tc1_cert_arn=$(aws acm-pca issue-certificate \
+                           --certificate-authority-arn ${CERTIFICATE_AUTHORITY_ARN} \
+                           --csr file://test_client_1.csr \
+                           --signing-algorithm "SHA256WITHRSA" \
+                           --validity Value=364,Type="DAYS" \
+                           --idempotency-token 1234     \
+                           --region ${REGION} --output text --query CertificateArn)
     
-    aws acm-pca get-certificate \
-        --certificate-authority-arn ${CERTIFICATE_AUTHORITY_ARN} \
-        --certificate-arn ${tc1_cert_arn} \
-        --output text \
-        --region us-east-1 > test_client_1.pem
+aws acm-pca get-certificate \
+            --certificate-authority-arn ${CERTIFICATE_AUTHORITY_ARN} \
+            --certificate-arn ${tc1_cert_arn} \
+            --output text \
+            --region us-east-1 > test_client_1.pem
+```
 
 Import the certificate to AWS IoT Core.  In the end to end, the
 Lambda function performs this act after CSR submission and
 certificate retrieval.
 
+```bash
     tc1_cert_iot_arn=$(aws iot register-certificate                     \
                            --certificate-pem file://test_client_1.pem   \
                            --ca-certificate-pem file://../widgiot-ca/useast1-widgiot-ca.pem \
@@ -1809,9 +1761,11 @@ certificate retrieval.
         --certificate-id $tc1_cert_iot_id                       \
         --new-status ACTIVE \
         --region us-east-1
+```
 
 Create the thing and policy.
 
+```bash
     aws iot create-thing                  \
         --output text  --region us-east-1 \
         --thing-name test_client_1        \
@@ -1840,6 +1794,7 @@ Create the thing and policy.
     aws iot ${REGION} attach-principal-policy \
         --policy-name test_client_1_policy \
         --principal ${tc1_cert_iot_arn} --region us-east-1
+```
 
 Checkout and configure the AWS IoT SDK for Python and use the
 private key, certificate, and endpoint.
@@ -1848,6 +1803,7 @@ private key, certificate, and endpoint.
 Then use the AWS IoT Device SDK for Python to test the
 connectivity.
 
+```bash
     endpoint=$(aws iot describe-endpoint --endpoint-type iot:Data-ATS --region us-east-1 --query endpointAddress --output text)
     wget https://www.amazontrust.com/repository/AmazonRootCA1.pem
     cd ..
@@ -1859,28 +1815,30 @@ connectivity.
             -k ../../../test_client_1/test_client_1.key \
             -c ../../../test_client_1/test_client_1.pem \
             -r ../../../test_client_1/AmazonRootCA1.pem
+```
 
-
-<a id="orgbf15e0a"></a>
-
-## Loading the Table with Test Data
+## Test Data Load 
 
 The test data emulates five devices.  Note that the aws cli is
 configured with a profile named \`rich\`. You will likely have a
 different profile.
 
-    for i in {1..5}; do
-        # This would be on the network processor
-        #openssl genrsa -out e2e_$i.key 2048
+```bash
+# NOTE This would be on the network processor; the private key would
+# already be created and the CSR would be a SimpleLink SDK call.
+
+for i in {1..5}; do
+
+    openssl genrsa -out e2e_$i.key 2048
     
-        openssl req -nodes -x509 -sha256 -newkey rsa:2048 \
-            -keyout e2e_$i.key \
-            -out "e2e_$i.sig.crt" \
-            -days 365 \
-            -subj "/C=US/ST=VA/L=Anywhere/O=Automatra/OU=WidgIoT/CN=$i" \
-            -batch -passin pass:nopass
+    openssl req -nodes -x509 -sha256 -newkey rsa:2048 \
+                -keyout e2e_$i.key \
+                -out "e2e_$i.sig.crt" \
+                -days 365 \
+                -subj "/C=US/ST=VA/L=Anywhere/O=Automatra/OU=WidgIoT/CN=$i" \
+                -batch -passin pass:nopass
             
-        # This gets derived by the line test probe
+ # This gets derived by the line test probe
         openssl rsa -in e2e_$i.key -pubout > e2e_$i.pub
         
         #aws --region us-east-1 s3 cp \
@@ -1890,33 +1848,23 @@ different profile.
         #    "{\"device-id\": {\"S\": \"111$i\"}, \"pubkey-object\": {\"S\":\"e2e_$i.pub\"}, \"pubkey-bucket\": {\"S\":\"elberger-pubkey-storage\"}}"
         
     done
+```
 
 Next, test CSR construction and then signature verification.
 
-\`\`\`
+```bash
 openssl req -new \\
         -key e2e<sub>1.key</sub> \\
         -out e2e<sub>1.csr</sub> \\
-        -subj "/C=US/ST=VA/L=Anywhere/O=Automatra/OU=WidgIoT us-east-1/CN=1111"
+        -subj "/C=US/ST=VA/L=Anywhere/O=Automatra/OU=WidgIoT ${REGION}/CN=1111"
 
-\`\`\`
-
-
-<a id="org087ee8b"></a>
+```
 
 ## Verifying the AWS API Gateway processing
 
 The AWS API Gateway processing can be manually tested using
-Postman.  In this test, we will be using the CSR generated for
-device 1111 and signing the string 1111 for the custom authorizer.
-
-Generate the signature for the string '1111'.
-
-    cd device-test
-    echo 1111 | openssl dgst -sha256 -sign e2e_1.key | base64 > e2e_1.sig
-
-Also, we need to base64 encode the CSR so when decoding we get it
-back into the “right format”.
+[Postman](https://www.getpostman.com/).  In this test, we will be
+using the CSR generated in the previous section.
 
 Test the payload to receive the response.
 
@@ -1925,9 +1873,9 @@ Test the payload to receive the response.
     a collection.
     1.  Name it WidgIoT Certificate Test
     2.  Click Create.
-3.  Create a new Request. make the Request Name ****Happy Path**** and
-    Request description ****This test should always provision a
-    certificate****.
+3.  Create a new Request. make the Request Name **Happy Path** and
+    Request description **This test should always provision a
+    certificate**.
 4.  Click the new request on the left hand side.
 5.  On the right hand side, right under the 'Happy Path' title,
     there is a drop down for the type of request. Select POST.
@@ -1935,7 +1883,8 @@ Test the payload to receive the response.
     values are used for the custom authorizer.  Click on the
     headers tab and enter the values accordingly.
 
-Next, we enter the Request body.  It will look something like this.  Note that the format is RAW and set to application/json.
+Next, we enter the Request body.  It will look something like this.
+Note that the format is RAW and set to `application/json`.
 
 Next, enter the request URL.  Get this from your deployed API in the stage Live.
 
@@ -1945,12 +1894,22 @@ Next, enter the request URL.  Get this from your deployed API in the stage Live.
 
 To invoke the URL, click the Send button.
 
+## Running with an Edge Device
 
-<a id="orgde787bb"></a>
+If you would like to simulate an edge device using Python, then 
 
-## Running the Texas Instruments CC3220SF Demo
+The reference implementation uses the TI CC3220SF.  However, if you do
+not have this device then you [Run the Python Test Script](#run-the-python-test-script).
+Otherwise, jump to [Run the Texas Instruments CC3220SF](#run-the-texas-instruments-cc3220sf).
+
+### Run the Python Test Script
+
+
+### Run the Texas Instruments CC3220SF
 
 In this section, you will run the demo using the public key that is
 derived from the Texas Instruments CC3220SF Network Processor (NWP)
 using the SimpleLink SDK.
+
+
 
