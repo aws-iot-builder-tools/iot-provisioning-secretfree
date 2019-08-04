@@ -1,0 +1,8 @@
+{
+  "CrlConfiguration": {
+    "Enabled": true,
+    "ExpirationInDays": 7,
+    "CustomCname": "some_name.crl",
+    "S3BucketName": "elberger-acm-pca-crl-useast1-widgiot"
+  }
+}

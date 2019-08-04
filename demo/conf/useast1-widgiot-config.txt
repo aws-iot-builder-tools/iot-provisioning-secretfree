@@ -1,0 +1,12 @@
+{
+  "KeyAlgorithm": "RSA_2048",
+  "SigningAlgorithm": "SHA256WITHRSA",
+  "Subject": {
+    "Country": "US",
+    "Organization": "Automatra",
+    "OrganizationalUnit": "WidgIoT us-east-1",
+    "State": "VA",
+    "Locality": "Anywhere",
+    "CommonName": "us-east-1.widgiot.automatra.net"
+  }
+}

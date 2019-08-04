@@ -1,0 +1,10 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action":   [ "iot:Publish" ],
+      "Resource": [ "arn:aws:iot:us-east-1:123456789012:topic/sample/topic" ]
+    }
+  ]
+}

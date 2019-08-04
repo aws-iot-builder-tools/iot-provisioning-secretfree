@@ -1,0 +1,48 @@
+{ 
+  "templateBody" : {
+    "Parameters" : {
+      "AWS::IoT::Certificate::CommonName": {
+        "Type": "String" },
+      "AWS::IoT::Certificate::SerialNumber": {
+        "Type": "String" },
+      "AWS::IoT::Certificate::Country": {
+        "Type": "String" },
+      "AWS::IoT::Certificate::Id": {
+        "Type": "String" } },
+    "Resources": {
+      "thing": {
+        "Type": "AWS::IoT::Thing",
+        "Properties": {
+          "ThingName": {
+            "Ref": "AWS::IoT::Certificate::CommonName"
+          },
+          "AttributePayload": {
+            "version": "v1",
+            "serialNumber": {
+              "Ref": "AWS::IoT::Certificate::SerialNumber"
+            }
+          }
+        },
+        "OverrideSettings": {
+          "AttributePayload": "MERGE",
+          "ThingTypeName": "REPLACE",
+          "ThingGroups": "DO_NOTHING" }
+      },
+      "certificate": {
+        "Type": "AWS::IoT::Certificate",
+        "Properties": {
+          "CertificateId": {
+            "Ref": "AWS::IoT::Certificate::Id" },
+          "Status": "ACTIVE" },
+        "OverrideSettings": {
+          "Status": "DO_NOTHING" } },
+      "policy": {
+        "Type": "AWS::IoT::Policy",
+        "Properties": {
+          "PolicyName": "WidgIoT"
+        }
+      }
+    }
+  },
+  "roleArn" : "arn:aws:iam::1234567890:role/Provisioning-JITP"
+}
