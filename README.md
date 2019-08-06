@@ -16,37 +16,37 @@ go to the **Demonstration** section.
 
 * [Overview](#overview)
 * [System Design](#system-design)
- * [System Components](#system-components)
-  * [IoT Device](#iot-device)
-  * [API Gateway](#api-gateway)
- * [Deployment](#deployment)
- * [Staging](#staging)
- * [Processing](#processing)
+  * [System Components](#system-components)
+    * [IoT Device](#iot-device)
+    * [API Gateway](#api-gateway)
+  * [Deployment](#deployment)
+  * [Staging](#staging)
+  * [Processing](#processing)
 * [System Implementation and Deployment](#system-implementation-and-deployment)
- * [Prerequisites](#prerequisites)
-  * [Certificate Issuer](#certificate-issuer)
-  * [Device](#device)
-  * [CloudFormation](#cloudformation)
- * [AWS Lambda: Layer: pyOpenSSL](#aws-lambda:-layer:-pyopenssl)
- * [AWS Lambda: Lambda Authorizer for API
-   Gateway](#aws-lambda:-lambda-authorizer-for-api-gateway)
- * [AWS Lambda: Issuing ACM based
+  * [Prerequisites](#prerequisites)
+    * [Certificate Issuer](#certificate-issuer)
+    * [Device](#device)
+    * [CloudFormation](#cloudformation)
+  * [AWS Lambda: Layer: pyOpenSSL](#aws-lambda:-layer:-pyopenssl)
+  * [AWS Lambda: Lambda Authorizer for API
+    Gateway](#aws-lambda:-lambda-authorizer-for-api-gateway)
+  * [AWS Lambda: Issuing ACM based
    certificates](#aws-lambda:-issuing-acm-based-certificates)
- * [AWS Lambda: Issuing AWS IoT Core based
+  * [AWS Lambda: Issuing AWS IoT Core based
    certificates](#aws-lambda:-issuing-aws-iot-core-based-certificates)
- * [DynamoDB Global Table](#dynamodb-global-table)
- * [API Gateway Endpoint, Resource, Method, Model, and
-   Response](#apit-gateway-endpoint,-resource,-method,-model,-and-response)
- * [Upload and Deployment](#upload-and-depliyment)
+  * [DynamoDB Global Table](#dynamodb-global-table)
+  * [API Gateway Endpoint, Resource, Method, Model, and
+    Response](#apit-gateway-endpoint,-resource,-method,-model,-and-response)
+  * [Upload and Deployment](#upload-and-depliyment)
 * [Demonstration](#demonstration)
- * [AWS Certificate Manager Provisioning](#aws-certificate-manager-provisioning)
-  * [Root Certificate Authority](#root-certificate-authority)
-  * [Intermediate Certificate Authority](#intermediate-certificate-authority)
-  * [Device Issuer Certificate Authority](#device-issuer-certificate-authority)
- * [Verifying the ACM Setup](#verifying-the-acm-setup)
- * [Loading the Table with Test Data](#loading-the-table-with-test-data)
- * [Verifying the AWS API Gateway Processing](#verifying-the-aws-api-gateway-processing)
- * [Running with an Edge Device](#running-with-an-edge-device)
+  * [AWS Certificate Manager Provisioning](#aws-certificate-manager-provisioning)
+    * [Root Certificate Authority](#root-certificate-authority)
+    * [Intermediate Certificate Authority](#intermediate-certificate-authority)
+    * [Device Issuer Certificate Authority](#device-issuer-certificate-authority)
+  * [Verifying the ACM Setup](#verifying-the-acm-setup)
+  * [Loading the Table with Test Data](#loading-the-table-with-test-data)
+  * [Verifying the AWS API Gateway Processing](#verifying-the-aws-api-gateway-processing)
+  * [Running with an Edge Device](#running-with-an-edge-device)
 
 ## License Summary
 
