@@ -10,9 +10,7 @@ from OpenSSL.crypto import load_certificate_request, FILETYPE_PEM, dump_publicke
 
 def get_pubkey( req ):
     device_id = req.get_subject().CN
-
     d = boto3.client('dynamodb')
-    s3 = boto3.resource('s3')
     
     response = d.get_item(
         Key={ 'device-id': { 'S' : device_id } },
@@ -32,7 +30,8 @@ def lambda_handler(event, context):
     req_pubkey_pem = dump_publickey( FILETYPE_PEM, req_pubkey )
 
     # Get the public key from Dynamo. Load and then dump to format proper
-    ori_pubkey_pem = get_pubkey(req)
+    # Whole certificate is base64 encoded for maintaining textual integrity
+    ori_pubkey_pem = base64.b64decode(get_pubkey(req))
     pubbuf = OpenSSL.crypto.load_publickey(FILETYPE_PEM, ori_pubkey_pem)
     ori_pubkey_pem = dump_publickey( FILETYPE_PEM, pubbuf)
     
