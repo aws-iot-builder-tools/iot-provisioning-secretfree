@@ -2,6 +2,13 @@
 P=$(pwd)/$(dirname $0)
 
 if test -z $1; then
+    echo ERROR: SKUNAME not defined
+    exit 1
+else
+    SKUNAME=$1
+fi
+
+if test -z $2; then
     ACMPCA=0
 else
     ACMPCA=1
@@ -12,13 +19,12 @@ if test -f ~/.aws/config; then
 fi
 
 REGION=${REGION:=${DEFAULT_REGION}}
-PREFIX=${PREFIX:=${USER}}
-BUCKET=${PREFIX}-iot-secretfree-cfn
+BUCKET=${SKUNAME}-iot-secretfree-cfn
 
-echo REGION: ${REGION}
-echo PREFIX: ${PREFIX}
-echo ACMPCA: ${ACMPCA}
-echo BUCKET: ${BUCKET}
+echo "REGION:  ${REGION}"
+echo "SKUNAME: ${SKUNAME}"
+echo "ACMPCA:  ${ACMPCA}"
+echo "BUCKET:  ${BUCKET}"
 
 echo ""
 
@@ -111,7 +117,7 @@ echo Invoking CloudFormation
 
 URL=https://${BUCKET}.s3.amazonaws.com/secretfree.yml
 stack_id=$(aws cloudformation create-stack --output text \
-               --stack-name ${PREFIX}-iot-provisioning-secretfree \
+               --stack-name ${SKUNAME}-iot-provisioning-secretfree \
                --template-url "${URL}" \
                --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
                --parameters ParameterKey=TemplateBucket,ParameterValue=${BUCKET} \
@@ -132,8 +138,8 @@ while test "${deployment_status}" == "CREATE_IN_PROGRESS"; do
     sleep 3
     
     deployment_status=$(aws cloudformation describe-stacks \
-                            --stack-name ${PREFIX}-iot-provisioning-secretfree \
-                            --query "Stacks[?StackName=='${PREFIX}-iot-provisioning-secretfree'].StackStatus" \
+                            --stack-name ${SKUNAME}-iot-provisioning-secretfree \
+                            --query "Stacks[?StackName=='${SKUNAME}-iot-provisioning-secretfree'].StackStatus" \
                             --output text)
 done
 
