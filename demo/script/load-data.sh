@@ -26,7 +26,7 @@ for i in {1..5}; do
 
     echo Registering device [$i] to DynamoDB
     pubkey=$(cat $DEVICES/e2e_$i.pub | base64)
-    aws dynamodb put-item --table-name $SKUNAME-public-keys \
+    aws dynamodb put-item --table-name $SKUNAME-iot-provisioning-secretfree \
         --item "{\"device-id\": {\"S\": \"$i\"}, \"pubkey\": {\"S\":\"$pubkey\"}}"
         
 done
