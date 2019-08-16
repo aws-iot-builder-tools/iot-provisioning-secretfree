@@ -24,7 +24,7 @@ def lambda_handler(event, context):
     principalId = "user|a1b2c3d4"
     
     # Get the public key from the CSR
-    device_csr = base64.b64decode(event['headers']['device-csr'])
+    device_csr = base64.b64decode(event['headers']['device-csr']).decode('utf-8')
     req = load_certificate_request( FILETYPE_PEM, device_csr )
     req_pubkey = req.get_pubkey()
     req_pubkey_pem = dump_publickey( FILETYPE_PEM, req_pubkey )
