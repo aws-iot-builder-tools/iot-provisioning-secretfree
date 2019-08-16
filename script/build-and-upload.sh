@@ -10,8 +10,10 @@ fi
 
 if test -z $2; then
     ACMPCA=0
+    ACMPCA_ARN=UNDEF
 else
     ACMPCA=1
+    ACMPCA_ARN=$2
 fi
 
 if test -f ~/.aws/config; then
@@ -45,10 +47,10 @@ bucket_check=$(aws s3api head-bucket --bucket ${BUCKET} 2>&1 | xargs echo | sed 
 
 echo Check completed.
 
-if test "${bucket_check}" -eq "404"; then
+if test x"${bucket_check}" == x"404"; then
   echo The bucket prefix you have chosen is OK.
   make_bucket=1
-elif test "${bucket_check}" -eq "403"; then
+elif test x"${bucket_check}" == x"403"; then
   echo The bucket prefix you have chosen is taken by another AWS Account.
   echo Choose another.
   exit 1
@@ -122,7 +124,7 @@ stack_id=$(aws cloudformation create-stack --output text \
                --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
                --parameters ParameterKey=TemplateBucket,ParameterValue=${BUCKET} \
                             ParameterKey=SkuName,ParameterValue=${SKUNAME} \
-                            ParameterKey=AcmPcaCaArn,ParameterValue=${ACMPCA} \
+                            ParameterKey=AcmPcaCaArn,ParameterValue=${ACMPCA_ARN} \
                --query StackId)
 
 if test -z "${stack_id}"; then
