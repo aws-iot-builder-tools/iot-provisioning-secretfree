@@ -12,10 +12,10 @@ for i in {1..5}; do
     #echo Generating private key for device [$i]
     #openssl genrsa -out ../devices/e2e_$i.key 2048
 
-    echo Generating certificate for device [$i]
-    openssl req -nodes -x509 -sha256 -newkey rsa:2048 \
+    echo Generating certificate request for device [$i]
+    openssl req -nodes -sha256 -newkey rsa:2048 \
             -keyout ../devices/e2e_$i.key \
-            -out ../devices/e2e_$i.sig.crt \
+            -out ../devices/e2e_$i.csr \
             -days 365 \
             -subj "/C=US/ST=VA/L=Anywhere/O=Automatra/OU=WidgIoT/CN=$i" \
             -batch -passin pass:nopass
