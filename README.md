@@ -28,15 +28,11 @@ go to the **Demonstration** section.
     * [Device](#device)
     * [CloudFormation](#cloudformation)
   * [AWS Lambda: Layer: pyOpenSSL](#aws-lambda:-layer:-pyopenssl)
-  * [AWS Lambda: Lambda Authorizer for API
-    Gateway](#aws-lambda:-lambda-authorizer-for-api-gateway)
-  * [AWS Lambda: Issuing ACM based
-   certificates](#aws-lambda:-issuing-acm-based-certificates)
-  * [AWS Lambda: Issuing AWS IoT Core based
-   certificates](#aws-lambda:-issuing-aws-iot-core-based-certificates)
+  * [AWS Lambda: Lambda Authorizer for API Gateway](#aws-lambda:-lambda-authorizer-for-api-gateway)
+  * [AWS Lambda: Issuing ACM based certificates](#aws-lambda:-issuing-acm-based-certificates)
+  * [AWS Lambda: Issuing AWS IoT Core based certificates](#aws-lambda:-issuing-aws-iot-core-based-certificates)
   * [DynamoDB Global Table](#dynamodb-global-table)
-  * [API Gateway Endpoint, Resource, Method, Model, and
-    Response](#apit-gateway-endpoint,-resource,-method,-model,-and-response)
+  * [API Gateway Endpoint, Resource, Method, Model, and Response](#apit-gateway-endpoint,-resource,-method,-model,-and-response)
   * [Upload and Deployment](#upload-and-depliyment)
 * [Demonstration](#demonstration)
   * [AWS Certificate Manager Provisioning](#aws-certificate-manager-provisioning)
@@ -685,6 +681,8 @@ payload as part of the Lambda function deployment.  This script is at
 
 ## AWS Lambda: AWS IoT Core based certificate issuance
 
+
+
     import json
     import boto3
     import time
@@ -776,25 +774,6 @@ payload as part of the Lambda function deployment.  This script is at
           Variables:
             ACMPCA_CA_ARN: !Ref AcmPcaCaArn
             SECRETFREE_TABLENAME: !Ref ProvisioningTable
-
-
-<a id="org3572e39"></a>
-
-## DynamoDB Global Table
-
-The DynamoDB Global Table is created to hold pointers to the public
-keys that are used for signature verification.  The reason for the
-global table is the request could come in from any API GW endpoint
-from any of the deployed regions based on the Route 53 routing.
-
-Create one table but prepare it for global table promotion by
-enabling streaming.
-
-The table is setup with two attributes: `device-id` and `pubkey`.  The
-payload derived from the manufacturing line is imported to this table.
-
-For the CloudFormation definition, see the **ProvisioningTable**
-resource in the deployment [cfn](cfn/secretfree.yml).
 
 ## API Gateway Endpoint, Resource, Method, Model, and Response
 
@@ -1072,7 +1051,7 @@ for your organziation. Usually, you will want a verifiable issuer
 such as Amazon, Thawte, etcetera.  Since we would not want to do this
 for prototyping, the root authority will be self-signed.  **Do not do
 this for production workloads. You should have a verifiable root CA
-issuer give you an intermediate that represents your entity.**
+issuer give you an intermediate that represents your entity**.
 
 #### Root Certificate Short Story
 
@@ -1818,46 +1797,20 @@ connectivity.
 ```
 
 ## Test Data Load 
+    
+The test data creates five "devices" with an incrementing serial
+number from 1..5.  The local device artifacts (private key, public
+key, and certificate) are created in `ROOT/demo/devices` and are named
+with the prefix **e2e_**.
 
-The test data emulates five devices.  Note that the aws cli is
-configured with a profile named \`rich\`. You will likely have a
-different profile.
+The entries are then put to DynamoDB.
+
+Invoke the `load-data.sh` script with no arguments.  Modify the
+Subject in the script if you customized it in the earlier section.
 
 ```bash
-# NOTE This would be on the network processor; the private key would
-# already be created and the CSR would be a SimpleLink SDK call.
-
-for i in {1..5}; do
-
-    openssl genrsa -out e2e_$i.key 2048
-    
-    openssl req -nodes -x509 -sha256 -newkey rsa:2048 \
-                -keyout e2e_$i.key \
-                -out "e2e_$i.sig.crt" \
-                -days 365 \
-                -subj "/C=US/ST=VA/L=Anywhere/O=Automatra/OU=WidgIoT/CN=$i" \
-                -batch -passin pass:nopass
-            
- # This gets derived by the line test probe
-        openssl rsa -in e2e_$i.key -pubout > e2e_$i.pub
-        
-        #aws --region us-east-1 s3 cp \
-        #    e2e_$i.pub s3://elberger-pubkey-storage/e2e_$i.pub
-    
-        #aws --region us-east-1 dynamodb put-item --table-name widgiot-public-keys --item \
-        #    "{\"device-id\": {\"S\": \"111$i\"}, \"pubkey-object\": {\"S\":\"e2e_$i.pub\"}, \"pubkey-bucket\": {\"S\":\"elberger-pubkey-storage\"}}"
-        
-    done
-```
-
-Next, test CSR construction and then signature verification.
-
-```bash
-openssl req -new \\
-        -key e2e<sub>1.key</sub> \\
-        -out e2e<sub>1.csr</sub> \\
-        -subj "/C=US/ST=VA/L=Anywhere/O=Automatra/OU=WidgIoT ${REGION}/CN=1111"
-
+cd ROOT/demo/script
+./load-data.sh
 ```
 
 ## Verifying the AWS API Gateway processing
