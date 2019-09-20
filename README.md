@@ -155,7 +155,10 @@ defined by the following diagram.
    the client; the client should interrogate that a 200 or otherwise
    has been received, and upon a 200 persist the payload to the
    appropriate nonvolatile memory resource.
-9. The device recogizes that there is a client certificate available
+9. Before the certificate is sent back to API Gateway in step 8, the
+   certificate is registered and related objects are instantiated in
+   the IoT Core registry.
+10. The device recogizes that there is a client certificate available
    to use for authentication. The client attempts to connect to the
    AWS IoT Core endpoint for the first time.
    
