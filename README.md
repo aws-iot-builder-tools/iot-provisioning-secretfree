@@ -1125,13 +1125,14 @@ Create a new CA for us-east-1.  Note documentation at
 says to use —tags but it's not a valid flag for this operation.
 
 ```bash
-CRT_AUTH_ARN=$(aws acm-pca create-certificate-authority --output text \
-                                    --certificate-authority-configuration file://useast1-widgiot-config.txt \
-                                    --revocation-configuration file://useast1-widgiot-revoke-config.txt \
-                                    --certificate-authority-type "SUBORDINATE" \
-                                    --idempotency-token 98256344 \
-                                    --region us-east-1 \
-                                    --query CertificateAuthorityArn)
+CRT_AUTH_ARN=$(aws acm-pca create-certificate-authority \
+                   --certificate-authority-configuration file://${REGION}-widgiot-config.txt \
+                   --revocation-configuration file://${REGION}-widgiot-revoke-config.txt \
+                   --certificate-authority-type "SUBORDINATE" \
+                   --idempotency-token 98256344 \
+                   --region ${REGION} \
+                   --query CertificateAuthorityArn) \
+                   --output text
 ```
 
 Get the CSR from the cloud.  note that the CertificateAuthorityArn
@@ -1139,15 +1140,14 @@ will be unique and the previous command should capture the output
 and have it applied to the forthcoming command.
 
 ```bash
-    aws acm-pca get-certificate-authority-csr \
-        --certificate-authority-arn ${CRT_AUTHARN} \
-        --output text \
-        --region us-east-1 \
-        > useast1-widgiot-ca.csr
+aws acm-pca get-certificate-authority-csr \
+    --certificate-authority-arn ${CRT_AUTHARN} \
+    --output text \
+    --region ${REGION} \
+    > ${REGION}-widgiot-ca.csr
 ```
     
-Issue the CA certificate using the Intermediate CA.
-    
+Issue the CA certificate using the Intermediate CA.  
 
 ```bash
 cd ../widgiot-ca
