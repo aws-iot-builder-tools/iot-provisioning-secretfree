@@ -359,228 +359,13 @@ To install the layer, evaluate the following CloudFormation resource.
 
 ## AWS Lambda: Lambda Authorizer for API Gateway
 
-In this section, we deploy the Lambda Authorizer Lambda Function.
-The bulk of the authorizer code was taken from the [python blueprint
-on Github](https://github.com/awslabs/aws-apigateway-lambda-authorizer-blueprints/blob/master/blueprints/python/api-gateway-authorizer-python.py). The Custom Authorizer interrogates the header value
-that includes the Device ID and the Signature.
+In this section, we deploy the Lambda Authorizer Lambda Function.  The
+bulk of the authorizer code was taken from the [python blueprint on
+Github](https://github.com/awslabs/aws-apigateway-lambda-authorizer-blueprints/blob/master/blueprints/python/api-gateway-authorizer-python.py). The
+Custom Authorizer interrogates the header value that includes the
+Device ID and the Signature.
 
-    import json
-    import base64
-    import boto3
-    import re
-    import time
-    import pprint
-    import os
-    import OpenSSL.crypto
-    from OpenSSL.crypto import load_certificate_request, FILETYPE_PEM, dump_publickey
-    
-    def get_pubkey( req ):
-        device_id = req.get_subject().CN
-    
-        d = boto3.client('dynamodb')
-        s3 = boto3.resource('s3')
-        
-        response = d.get_item(
-            Key={ 'device-id': { 'S' : device_id } },
-            TableName=os.environ['SECRETFREE_TABLENAME']
-        )
-    
-        return response['Item']['pubkey']['S']
-    
-    def lambda_handler(event, context):
-        print("Method ARN: " + event['methodArn'])
-        principalId = "user|a1b2c3d4"
-        
-        # Get the public key from the CSR
-        device_csr = base64.b64decode(event['headers']['device-csr'])
-        req = load_certificate_request( FILETYPE_PEM, device_csr )
-        req_pubkey = req.get_pubkey()
-        req_pubkey_pem = dump_publickey( FILETYPE_PEM, req_pubkey )
-    
-        # Get the public key from Dynamo. Load and then dump to format proper
-        ori_pubkey_pem = get_pubkey(req)
-        pubbuf = OpenSSL.crypto.load_publickey(FILETYPE_PEM, ori_pubkey_pem)
-        ori_pubkey_pem = dump_publickey( FILETYPE_PEM, pubbuf)
-        
-        print(ori_pubkey_pem)
-        print(req_pubkey_pem)
-        
-        if ( ori_pubkey_pem == req_pubkey_pem ):
-            # Return 201 and respond w sigv4 uri to signed certificate
-            tmp = event['methodArn'].split(':')
-            apiGatewayArnTmp = tmp[5].split('/')
-            awsAccountId = tmp[4]
-        
-            policy = AuthPolicy(principalId, awsAccountId)
-            policy.restApiId = apiGatewayArnTmp[0]
-            policy.region = tmp[3]
-            policy.stage = apiGatewayArnTmp[1]
-            policy.denyAllMethods()
-            policy.allowMethod(HttpVerb.POST, "/new/*")
-        
-            # Finally, build the policy
-            authResponse = policy.build()
-    
-            return authResponse
-        else:
-            raise Exception('Unauthorized')
-        
-    class HttpVerb:
-        GET     = "GET"
-        POST    = "POST"
-        PUT     = "PUT"
-        PATCH   = "PATCH"
-        HEAD    = "HEAD"
-        DELETE  = "DELETE"
-        OPTIONS = "OPTIONS"
-        ALL     = "*"
-    
-    class AuthPolicy(object):
-        awsAccountId = ""
-        """The AWS account id the policy will be generated for. This is used to create the method ARNs."""
-        principalId = ""
-        """The principal used for the policy, this should be a unique identifier for the end user."""
-        version = "2012-10-17"
-        """The policy version used for the evaluation. This should always be '2012-10-17'"""
-        pathRegex = "^[/.a-zA-Z0-9-\*]+$"
-        """The regular expression used to validate resource paths for the policy"""
-    
-        """these are the internal lists of allowed and denied methods. These are lists
-        of objects and each object has 2 properties: A resource ARN and a nullable
-        conditions statement.
-        the build method processes these lists and generates the approriate
-        statements for the final policy"""
-        allowMethods = []
-        denyMethods = []
-    
-        restApiId = "*"
-        """The API Gateway API id. By default this is set to '*'"""
-        region = "*"
-        """The region where the API is deployed. By default this is set to '*'"""
-        stage = "*"
-        """The name of the stage used in the policy. By default this is set to '*'"""
-    
-        def __init__(self, principal, awsAccountId):
-            self.awsAccountId = awsAccountId
-            self.principalId = principal
-            self.allowMethods = []
-            self.denyMethods = []
-    
-        def _addMethod(self, effect, verb, resource, conditions):
-            """Adds a method to the internal lists of allowed or denied methods. Each object in
-            the internal list contains a resource ARN and a condition statement. The condition
-            statement can be null."""
-            if verb != "*" and not hasattr(HttpVerb, verb):
-                raise NameError("Invalid HTTP verb " + verb + ". Allowed verbs in HttpVerb class")
-            resourcePattern = re.compile(self.pathRegex)
-            if not resourcePattern.match(resource):
-                raise NameError("Invalid resource path: " + resource + ". Path should match " + self.pathRegex)
-    
-            if resource[:1] == "/":
-                resource = resource[1:]
-    
-            resourceArn = ("arn:aws:execute-api:" +
-                self.region + ":" +
-                self.awsAccountId + ":" +
-                self.restApiId + "/" +
-                self.stage + "/" +
-                verb + "/" +
-                resource)
-    
-            if effect.lower() == "allow":
-                self.allowMethods.append({
-                    'resourceArn' : resourceArn,
-                    'conditions' : conditions
-                })
-            elif effect.lower() == "deny":
-                self.denyMethods.append({
-                    'resourceArn' : resourceArn,
-                    'conditions' : conditions
-                })
-    
-        def _getEmptyStatement(self, effect):
-            """Returns an empty statement object prepopulated with the correct action and the
-            desired effect."""
-            statement = {
-                'Action': 'execute-api:Invoke',
-                'Effect': effect[:1].upper() + effect[1:].lower(),
-                'Resource': []
-            }
-    
-            return statement
-    
-        def _getStatementForEffect(self, effect, methods):
-            """This function loops over an array of objects containing a resourceArn and
-            conditions statement and generates the array of statements for the policy."""
-            statements = []
-    
-            if len(methods) > 0:
-                statement = self._getEmptyStatement(effect)
-    
-                for curMethod in methods:
-                    if curMethod['conditions'] is None or len(curMethod['conditions']) == 0:
-                        statement['Resource'].append(curMethod['resourceArn'])
-                    else:
-                        conditionalStatement = self._getEmptyStatement(effect)
-                        conditionalStatement['Resource'].append(curMethod['resourceArn'])
-                        conditionalStatement['Condition'] = curMethod['conditions']
-                        statements.append(conditionalStatement)
-    
-                statements.append(statement)
-    
-            return statements
-    
-        def allowAllMethods(self):
-            """Adds a '*' allow to the policy to authorize access to all methods of an API"""
-            self._addMethod("Allow", HttpVerb.ALL, "*", [])
-    
-        def denyAllMethods(self):
-            """Adds a '*' allow to the policy to deny access to all methods of an API"""
-            self._addMethod("Deny", HttpVerb.ALL, "*", [])
-    
-        def allowMethod(self, verb, resource):
-            """Adds an API Gateway method (Http verb + Resource path) to the list of allowed
-            methods for the policy"""
-            self._addMethod("Allow", verb, resource, [])
-    
-        def denyMethod(self, verb, resource):
-            """Adds an API Gateway method (Http verb + Resource path) to the list of denied
-            methods for the policy"""
-            self._addMethod("Deny", verb, resource, [])
-    
-        def allowMethodWithConditions(self, verb, resource, conditions):
-            """Adds an API Gateway method (Http verb + Resource path) to the list of allowed
-            methods and includes a condition for the policy statement. More on AWS policy
-            conditions here: http://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements.html#Condition"""
-            self._addMethod("Allow", verb, resource, conditions)
-    
-        def denyMethodWithConditions(self, verb, resource, conditions):
-            """Adds an API Gateway method (Http verb + Resource path) to the list of denied
-            methods and includes a condition for the policy statement. More on AWS policy
-            conditions here: http://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements.html#Condition"""
-            self._addMethod("Deny", verb, resource, conditions)
-    
-        def build(self):
-            """Generates the policy document based on the internal lists of allowed and denied
-            conditions. This will generate a policy with two main statements for the effect:
-            one statement for Allow and one statement for Deny.
-            Methods that includes conditions will have their own statement in the policy."""
-            if ((self.allowMethods is None or len(self.allowMethods) == 0) and
-                (self.denyMethods is None or len(self.denyMethods) == 0)):
-                raise NameError("No statements defined for the policy")
-    
-            policy = {
-                'principalId' : self.principalId,
-                'policyDocument' : {
-                    'Version' : self.version,
-                    'Statement' : []
-                }
-            }
-    
-            policy['policyDocument']['Statement'].extend(self._getStatementForEffect("Allow", self.allowMethods))
-            policy['policyDocument']['Statement'].extend(self._getStatementForEffect("Deny", self.denyMethods))
-    
-            return policy
+The main source for the Lambda Authorizer is at [lambda-authorizer/main.py](lambda-authorizer/main.py).
 
 The code must be zipped up in preparation for submitting the
 payload as part of the Lambda function deployment.
@@ -599,67 +384,10 @@ function, three resources must be implemented:
     scope
 -   Payload: the lambda function definition itself
 
-We will start with the payload.
-
-    PerSkuLambdaAuthorizer:
-      Type: AWS::Lambda::Function
-      Properties:
-        FunctionName: !Sub ${SkuName}-secretfree-authorizer
-        Code:
-          S3Bucket: !Ref TemplateBucket
-          S3Key:    lambda-authorizer.zip
-        Role: !GetAtt PerSkuLambdaAuthorizerExecutionRole.Arn
-        Handler: main.lambda_handler
-        Runtime: python3.6
-        MemorySize: 1024
-        Layers:
-          - !Ref pyOpensslLayer
-        Environment:
-          Variables:
-            SECRETFREE_TABLENAME: !Ref SkuName
-    
-    PerSkuLambdaAuthorizerInvokePermission:
-      Type: AWS::Lambda::Permission
-      Properties:
-        FunctionName: !GetAtt PerSkuLambdaAuthorizer.Arn
-        Action: lambda:InvokeFunction
-        Principal: apigateway.amazonaws.com
-        SourceAccount: !Ref AWS::AccountId
-        SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ProvisioningRestApi}/*/POST/new
-    
-    PerSkuLambdaAuthorizerExecutionRole:
-      Type: AWS::IAM::Role
-      Properties:
-        Path: /
-        RoleName: !Sub ${SkuName}-secretfree-authorizer-role
-        ManagedPolicyArns:
-          - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
-          - arn:aws:iam::aws:policy/AWSIoTFullAccess
-        AssumeRolePolicyDocument:
-          Statement:
-            -
-              Effect: Allow
-              Principal:
-                Service: lambda.amazonaws.com
-              Action:
-                - sts:AssumeRole
-        Policies:
-          -
-            PolicyName: !Sub ${SkuName}-secretfree-authorizer-logger
-            PolicyDocument:
-              Version: 2012-10-17
-              Statement:
-                -
-                  Effect: Allow
-                  Action: logs:CreateLogGroup
-                  Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
-                -
-                  Effect: Allow
-                  Action:
-                    - logs:CreateLogStream
-                    - logs:PutLogEvents
-                  Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${SkuName}-${AWS::StackName}:*
-
+To understand the deployment, see the CloudFormation resources for
+**PerSkuLambdaAuthorizer**,
+**PerSkuLambdaAuthorizerInvokePermissions**, and
+**PerSkuLambdaAuthorizerExecutionRole**.
 
 <a id="orgb7177d3"></a>
 
@@ -1247,113 +975,17 @@ openssl rand -hex 16 > db/serial
 echo 1001 > db/crlnumber
 ```
 
-Create the configuration file for the Intermediate CA representing
-the WidgIoT product line.  The meaning of this entire configuration is
-beyond the scope of this README and should be analyzed in the
-aforementioned book.
+Use the configuration file for the Intermediate CA representing the
+WidgIoT product line.  The meaning of this entire configuration is
+beyond the scope of this README and should be analyzed by referencing
+the aforementioned book.
 
-    [default]
-    name                    = widgiot-ca
-    domain_suffix           = automatra.net
-    aia_url                 = http://$name.$domain_suffix/$name.crt
-    crl_url                 = http://$name.$domain_suffix/$name.crl
-    ocsp_url                = http://ocsp.$name.$domain_suffix:9081
-    default_ca              = ca_default
-    name_opt                = utf8,esc_ctrl,multiline,lname,align
-    
-    [ca_dn]
-    countryName             = "US"
-    organizationName        = "Automatra"
-    commonName              = "WidgIoT"
-    
-    [ca_default]
-    home                    = .
-    database                = $home/db/index
-    serial                  = $home/db/serial
-    crlnumber               = $home/db/crlnumber
-    certificate             = $home/$name.crt
-    private_key             = $home/private/$name.key
-    RANDFILE                = $home/private/random
-    new_certs_dir           = $home/certs
-    unique_subject          = no
-    default_days            = 365
-    default_crl_days        = 30
-    copy_extensions         = copy
-    default_md              = sha256
-    policy                  = policy_c_o_match
-    
-    [policy_c_o_match]
-    countryName             = match
-    stateOrProvinceName     = optional
-    organizationName        = match
-    organizationalUnitName  = optional
-    commonName              = supplied
-    localityName            = optional
-    emailAddress            = optional
-    
-    [req]
-    default_bits            = 4096
-    encrypt_key             = yes
-    default_md              = sha256
-    utf8                    = yes
-    string_mask             = utf8only
-    prompt                  = no
-    distinguished_name      = ca_dn
-    req_extensions          = ca_ext
-    
-    [ca_ext]
-    basicConstraints        = critical,CA:true
-    keyUsage                = critical,keyCertSign,cRLSign
-    subjectKeyIdentifier    = hash
+The file is at (demo/intermediate-ca/widgiot-ca.conf).
 
-    [sub_ca_ext]
-    authorityInfoAccess     = @issuer_info
-    authorityKeyIdentifier  = keyid:always
-    basicConstraints        = critical,CA:true,pathlen:0
-    crlDistributionPoints   = @crl_info
-    extendedKeyUsage        = clientAuth,serverAuth
-    keyUsage                = critical,keyCertSign,cRLSign
-    nameConstraints         = @name_constraints
-    subjectKeyIdentifier    = hash
-    
-    [crl_info]
-    URI.0                   = $crl_url
-    [issuer_info]
-    caIssuers;URI.0         = $aia_url
-    OCSP;URI.0              = $ocsp_url
-    
-    [name_constraints]
-    permitted;DNS.0=example.com
-    permitted;DNS.1=example.org
-    excluded;IP.0=0.0.0.0/0.0.0.0
-    excluded;IP.1=0:0:0:0:0:0:0:0/0:0:0:0:0:0:0:0
-    [ocsp_ext]
-    authorityKeyIdentifier  = keyid:always
-    basicConstraints        = critical,CA:false
-    extendedKeyUsage        = OCSPSigning
-    keyUsage                = critical,digitalSignature
-    subjectKeyIdentifier    = hash
-    
-    [server_ext]
-    authorityInfoAccess     = @issuer_info
-    authorityKeyIdentifier  = keyid:always
-    basicConstraints        = critical,CA:false
-    crlDistributionPoints   = @crl_info
-    extendedKeyUsage        = clientAuth,serverAuth
-    keyUsage                = critical,digitalSignature,keyEncipherment
-    subjectKeyIdentifier    = hash
-    
-    [client_ext]
-    authorityInfoAccess     = @issuer_info
-    authorityKeyIdentifier  = keyid:always
-    basicConstraints        = critical,CA:false
-    crlDistributionPoints   = @crl_info
-    extendedKeyUsage        = clientAuth
-    keyUsage                = critical,digitalSignature
-    subjectKeyIdentifier    = hash
 
-Create the private key and generate the CSR for the WidgIoT
-product line.
+The following command creates the private key and generate the CSR for
+the WidgIoT product line.  This command is in file
+(demo/intermediate-ca/intermediate-ca.sh).
 
 ```bash
 openssl req -new                           \
@@ -1364,7 +996,8 @@ openssl req -new                           \
             -passout pass:nopass
 ```
 
-Have the root CA issue the intermediate CA.
+Have the root CA issue the intermediate CA.  This command is in file
+(demo/intermediate-ca/intermediate-ca.sh)
 
 ```bash
 cd ../root-ca/
@@ -1377,6 +1010,9 @@ openssl ca -config root-ca.conf \
 cp widgiot-ca.crt ../widgiot-ca
 cp root-ca.crt ../widgiot-ca #for ease of operation when issuing aws cert
 ```
+
+Next, we will be creating the Device Issuer CA which means working
+with ACM PCA.
 
 ### Device Issuer Certificate Authority
 
@@ -1433,45 +1069,52 @@ inferred).
 Create the bucket.
 
 ```bash
+
 BUCKET=${PREFIX}-acm-pca-crl-${REGION}-widgiot
 
-aws s3api create-bucket --bucket ${BUCKET} 
-                        --query  Location  \
-                        --region ${REGION}
+aws s3api create-bucket \
+    --bucket ${BUCKET}  \
+    --query  Location   \
+    --region ${REGION}
 ```
 
 Apply the policy.
 
 ```bash
-aws s3api put-bucket-policy --bucket ${BUCKET} \
-                            --policy file://../conf/s3-${REGION}-widgiot-ca.json
+aws s3api put-bucket-policy \
+    --bucket ${BUCKET}      \
+    --policy file://../conf/s3-${REGION}-widgiot-ca.json
 ```
 
 Create the input text for the CA configuration.
 
-    {
-      "KeyAlgorithm": "RSA_2048",
-      "SigningAlgorithm": "SHA256WITHRSA",
-      "Subject": {
-        "Country": "US",
-        "Organization": "Automatra",
+```json
+{
+    "KeyAlgorithm":     "RSA_2048",
+    "SigningAlgorithm": "SHA256WITHRSA",
+    "Subject": {
+        "Country":            "US",
+        "Organization":       "Automatra",
         "OrganizationalUnit": "WidgIoT us-east-1",
-        "State": "VA",
-        "Locality": "Anywhere",
-        "CommonName": "us-east-1.widgiot.automatra.net"
-      }
+        "State":              "VA",
+        "Locality":           "Anywhere",
+        "CommonName":         "us-east-1.widgiot.automatra.net"
     }
+}
+```
 
 Create the input text for the CA revocation list.
 
-    {
-      "CrlConfiguration": {
-        "Enabled": true,
+```json
+{
+    "CrlConfiguration": {
+        "Enabled":          true,
         "ExpirationInDays": 7,
-        "CustomCname": "some_name.crl",
-        "S3BucketName": "PREFIX-acm-pca-crl-REGION-widgiot"
-      }
+        "CustomCname": "    some_name.crl",
+        "S3BucketName":     "PREFIX-acm-pca-crl-REGION-widgiot"
     }
+}
+```
 
 You are responsible for ensuring that the input text for the
 revocation list is applicable.

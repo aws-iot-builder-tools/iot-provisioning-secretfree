@@ -1,92 +1,94 @@
+#! /bin/bash
+
+REGION=us-east-1
+PRODUCT=widgiot
+UNIQ=elberger
+
 cd ..
 mkdir aws-ca
 cd aws-ca
 
 aws s3api create-bucket \
-    --bucket "elberger-acm-pca-crl-useast1-widgiot" \
+    --bucket ${UNIQ}-acm-pca-crl-${REGION}-${PRODUCT}" \
     --query Location \
-    --region us-east-1
+    --region ${REGION}
 
 aws s3api put-bucket-policy \
-    --bucket elberger-acm-pca-crl-useast1-widgiot \
-    --policy file://../conf/s3-useast1-widgiot-ca.json
+    --bucket ${UNIQ}-acm-pca-crl-${REGION}-${PRODUCT} \
+    --policy file://../conf/s3-${REGION}-${PRODUCT}-ca.json
 
-CERTIFICATE_AUTHORITY_ARN=$(aws acm-pca create-certificate-authority --output text\
-                                --certificate-authority-configuration file://useast1-widgiot-config.txt \
-                                --revocation-configuration file://useast1-widgiot-revoke-config.txt \
+CA_ARN=$(aws acm-pca create-certificate-authority \
+                                --certificate-authority-configuration file://${REGION}-${PRODUCT}-config.txt \
+                                --revocation-configuration file://${REGION}-${PRODUCT}-revoke-config.txt \
                                 --certificate-authority-type "SUBORDINATE" \
                                 --idempotency-token 98256344 \
-                                --region us-east-1 \
+                                --output text \
+                                --region ${REGION} \
                                 --query CertificateAuthorityArn)
 
 aws acm-pca get-certificate-authority-csr \
-    --certificate-authority-arn ${CERTIFICATE_AUTHORITY_ARN} \
+    --certificate-authority-arn ${CA_ARN} \
     --output text \
-    --region us-east-1 \
-    > useast1-widgiot-ca.csr
-    #+end_srd
+    --region ${REGION} \
+    > ${REGION}-${PRODUCT}-ca.csr
 
-    Issue the CA certificate using the Intermediate CA.
-
-    #+begin_src bash :mkdirp yes :tangle ../../iot-provisioning-secretfree/demo/script/pki-config.sh
-
-cd ../widgiot-ca
+cd ../${PRODUCT}-ca
 
 openssl ca \
-    -config widgiot-ca.conf \
-    -in ../aws-ca/useast1-widgiot-ca.csr \
-    -out useast1-widgiot-ca.crt \
+    -config ${PRODUCT}-ca.conf \
+    -in ../aws-ca/${REGION}-${PRODUCT}-ca.csr \
+    -out ${REGION}-${PRODUCT}-ca.crt \
     -extensions sub_ca_ext \
     -batch \
     -passin pass:nopass
 
-openssl x509 -in useast1-widgiot-ca.crt -out useast1-widgiot-ca.pem -outform PEM
+openssl x509 -in useast1-widgiot-ca.crt -out ${REGION}-${PRODUCT}-ca.pem -outform PEM
 
-openssl x509 -in widgiot-ca.crt -out widgiot-ca.pem -outform PEM
+openssl x509 -in ${PRODUCT}-ca.crt -out ${PRODUCT}-ca.pem -outform PEM
 
 openssl x509 -in ../root-ca/root-ca.crt -out root-ca.pem -outform PEM
 
-cat widgiot-ca.pem root-ca.pem >  useast1-widgiot-ca-chain.pem
+cat ${PRODUCT}-ca.pem root-ca.pem >  ${REGION}-${PRODUCT}-ca-chain.pem
 
 aws acm-pca import-certificate-authority-certificate \
     --certificate-authority-arn  ${CERTIFICATE_AUTHORITY_ARN} \
-    --certificate file://useast1-widgiot-ca.pem \
-    --certificate-chain file://useast1-widgiot-ca-chain.pem \
-    --region us-east-1
+    --certificate file://${REGION}-${PRODUCT}-ca.pem \
+    --certificate-chain file://${REGION}-${PRODUCT}-ca-chain.pem \
+    --region ${REGION}
 
 code=$(aws iot get-registration-code \
            --query registrationCode \
-           --region us-east-1 --output text \
+           --region ${REGION} --output text \
            --query registrationCode )
 
 openssl genrsa -out useast1-verification-request.key 2048
 
 openssl req -new \
-        -key useast1-verification-request.key \
-        -out useast1-verification-request.csr \
-        -subj "/C=US/ST=VA/L=Anywhere/O=Automatra/OU=WidgIoT us-east-1/CN=$code"
+        -key ${REGION}-verification-request.key \
+        -out ${REGION}-verification-request.csr \
+        -subj "/C=US/ST=VA/L=Anywhere/O=Automatra/OU=${PRODUCT}-${REGION}/CN=$code"
 
 # request the certificate from ACM
         
 CERTIFICATE_ARN=$(aws acm-pca issue-certificate \
-                      --certificate-authority-arn  ${CERTIFICATE_AUTHORITY_ARN} \
-                      --csr file://useast1-verification-request.csr \
+                      --certificate-authority-arn  ${CA_ARN} \
+                      --csr file://${REGION}-verification-request.csr \
                       --signing-algorithm "SHA256WITHRSA" \
                       --validity Value=364,Type="DAYS" \
                       --idempotency-token 1234     \
-                      --region us-east-1 --output text \
+                      --region ${REGION} --output text \
                       --query CertificateArn)
 
 aws acm-pca get-certificate \
     --certificate-authority-arn  ${CERTIFICATE_AUTHORITY_ARN} \
     --certificate-arn ${CERTIFICATE_ARN} \
-    --output text --region us-east-1 > verification.pem
+    --output text --region ${REGION} > verification.pem
 
 TODO
 
 aws iot register-ca-certificate \
-               --ca-certificate file://useast1-widgiot-ca.pem \
+               --ca-certificate file://${REGION}-${PRODUCT}-ca.pem \
                --verification-cert file://verification.pem \
                --set-as-active \
                --query certificateArn \
-               --output text --region us-east-1
+               --output text --region ${REGION}
