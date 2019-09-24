@@ -10,11 +10,13 @@ sections be read and understood in order so you understand the
 end-to-end system operation.
 
 If you are impatient and want to try the mechanics immediately, please
-go to the **Demonstration** section.
+go to the **Where to Start** and then the **Demonstrations** section.
 
 ## Table of Contents
 
-* [Overview](#overview)
+* [Technical Requirements](#technical-requirements)
+* [Where to Start](#where-to-start)
+* [Process Overview](#process-overview)
 * [System Design](#system-design)
   * [System Components](#system-components)
     * [IoT Device](#iot-device)
@@ -33,8 +35,15 @@ go to the **Demonstration** section.
   * [AWS Lambda: Issuing AWS IoT Core based certificates](#aws-lambda:-issuing-aws-iot-core-based-certificates)
   * [DynamoDB Global Table](#dynamodb-global-table)
   * [API Gateway Endpoint, Resource, Method, Model, and Response](#apit-gateway-endpoint,-resource,-method,-model,-and-response)
-  * [Upload and Deployment](#upload-and-depliyment)
-* [Demonstration](#demonstration)
+  * [Upload and Deployment](#upload-and-deployment)
+  * [Vanity Domain Names](#vanity-domain-names)
+
+* [AWS Certificate Manager Provisioning](#aws-certificate-manager-provisioning)
+  * [Root Certificate Authority](#root-certificate-authority)
+    * [Intermediate Certificate Authority](#intermediate-certificate-authority)
+    * [Device Issuer Certificate Authority](#device-issuer-certificate-authority)
+
+* [Demonstrations](#demonstrations)
   * [AWS Certificate Manager Provisioning](#aws-certificate-manager-provisioning)
     * [Root Certificate Authority](#root-certificate-authority)
     * [Intermediate Certificate Authority](#intermediate-certificate-authority)
@@ -48,18 +57,113 @@ go to the **Demonstration** section.
 
 This sample code is made available under the MIT-0 license. See the LICENSE file.
 
-# Overview
+# Technical Requirements
+
+Beyond having an AWS account with an IAM login having Administrative
+privilege (IAM objects will be created), the local workstation must
+have the following installed.
+
+1. You must be on a relatively modern BSD or GNU/Linux based
+   system. If you are running a host with Microsoft Windows, you can
+   run the commands from an Amazon EC2 instance.
+2. AWS Command Line Interface (CLI)
+3. Docker 19.
+4. Python 3.6 or 3.7.
+5. OpenSSL (0.9.8zh).
+6. Common shell utilities (fileutils, binutils, etc.)
+
+# Where to Start
+
+Managing the credential lifecycle from sunrise to sunset can be
+challenging. Identifying the approach early the product development
+lifecycle can reduce or completely eliminate credential delivery risk
+for when you go into production.
+
+To quickly identify where to start, identify your goal.  It will be
+one of the following.
+
+1. I want to deploy the system to begin prototyping my solution using
+   a standard certificate interface.  I do not care what entity issues
+   the certificate.
+2. I want to deploy the system for a specific region and I do not need
+   control over PKI operations.
+3. I want to prototype multi-region credential provisioning from an
+   adminitrative perspective, with the intent to have control over PKI
+   operations for production.
+4. I want to deploy the system at scale for single or multi-region with
+   control over PKI operations for production.
+
+Jump to either [Start Prototyping](#start-prototyping), [Start Single
+Region](#start-single-region), [Start Multi Region
+Prototyping](#start-multi-region-prototyping), or [Start Multi Region
+Production](#start-multi-region-production).
+
+After setting up, go to the **Demonstrations** section to quickly
+experience the system from a host programming perspective.
+
+## Start Prototyping
+
+To start prototyping with this system, you will deploy the system to a
+specific region.
+
+1. Clone the repository.
+
+   ```bash
+   $ git clone https://github.com/aws-samples/iot-provisioning-secretfree.git
+   ```
+2. Change directory to scripts.
+
+   ```bash
+   $ cd iot-provisioning-secretfree/scripts
+   ```
+3. Deploy the system. Since your provisioning may slightly differ
+   between products you are shipping, you must provide a SKU Name.
+   For example, you could name your SKU MyProduct, and the invocation
+   would be the following.
+
+   ```bash
+   $ ./build-and-upload.sh MyProduct
+   ```
+   
+   The system will contruct three Lambda function payloads using the
+   Docker system, copy the function payloads and the CloudFormation
+   script to the Amazon S3 bucket, and then invoke the CloudFormation
+   script.
+   
+   The bash script will contact the CloudFormation service every few
+   seconds to fetch the deployment status.
+   
+## Start Single Region
+
+The difference between this start and the [Start
+Prototyping](#start-prototyping) is the potential need to have a
+vanity domain name to front your API Gateway endpoint.
+
+## Start Multi Region Prototyping
+
+**WARNING** The service ACM PCA requires a monthly fee for every CA
+you have ACM PCA manage.  **This fee is not covered by Free Tier**.
+
+1. Follow the instructions for 
+
+## Start Multi Region Production
+
+**WARNING** The service ACM PCA requires a monthly fee for every CA
+you have ACM PCA manage.  **This fee is not covered by Free Tier**.
+
+
+# Process Overview
 
 The processes for the device manufacturer span across three areas:
-management system deployment, public credential imports, and
-credential issuance.  The first area initializes the cloud side
+management system deployment, importing public credentials, and
+issuing credentials.  The first area initializes the cloud side
 infrastructure. The second area defines the process of, on the
-manufacturing line, retrieving the public key derived by the
-immutable root of trust (private key) on the CC32xx microprocessor,
-and saving the public key to storage.  The third area relates to the
-workflows for certificate provisioning to the microprocessor as well
-as AWS IoT, and the subsequent provisioning of relating artifacts
-such as the IoT Thing, Policy, Group, and so forth.
+manufacturing line, retrieving the public key derived by the immutable
+root of trust (private key) on the CC32xx microprocessor, and saving
+the public key to storage.  The third area relates to the workflows
+for certificate provisioning to the microprocessor as well as AWS IoT,
+and the subsequent provisioning of relating artifacts such as the IoT
+Thing, Policy, Group, and so forth.
 
 The general premise for this process is, at device initialization by
 the consumer, the firmware constructs a Certificate Signing Request
@@ -114,7 +218,6 @@ defined by the following diagram.
 
 ![Secretless-ACMPCA.png](img/Secretless-ACMPCA.png)
 
-
 1. The PKI Admin would have received a CSR from ACM PCA and a *parent
    issuer* then issues the certificate.  The PKI Admin then submits
    the issued certificate to ACM PCA.
@@ -164,19 +267,8 @@ defined by the following diagram.
    
    *Note*: there is room for customization in the payload response
    from API Gateway to also include the region-sensitive connectivity
-   endpoint.   This value should be saved to NVM for future use.  When
-   connecting to AWS IoT Core, the system 
-10. In the case where the certificate is not registered as active with
-    AWS IoT Core, the JITP or JITR process occurs.  The diagram
-    expresses the JITP process for simplicity, but you might require
-    JITR when registration has requirements beyond the JITP
-    capabilities. 
-11. Upon successful JITP or JITR interrogation, the object
-    provisioning occurs so that all required and accessory objects are
-    instantiated to enable IoT Core authorization as well as future
-    indexing and jobs through Thing Group attribution.
-
-
+   endpoint.  This value should be saved to NVM for future
+   connections.
 
 ## Issuing with AWS IoT Core
 
@@ -203,15 +295,38 @@ they will not be restated here.
    policy.
 7. At this point, all components are created and the certificate has
    been activated, so further connectivity occurs normally.
-## Deployment
 
-In the deployment process, infrastructure is deployed and the
-Certificate Authority, along with the Just in Time Provisioning
-(JITP) configuration, is initialized and made operational.  There
-is an alternate deployment configuration where the certificate
-issuer is AWS IoT Core instead of ACM PCA.  In the former case, the
-constraint is the certificate can not be deployed to regions
-globally.
+## Certificate Rotation
+
+The system can partipate in certificate rotation activities. Anytime
+the host code interacts with the API Gateway endpoint and the
+authenticator identifies the host as having a valid identity that can
+participate in the system, the system will issue a certificate.
+
+The system can participate in Intermediate CA rotation use cases when
+using ACMPCA.  When the Intermediate CA must be rotated, the PKI
+Administrator can perform the required tasks to initiate the new
+Intermediate CA to ACMPCA, change the configured Intermediate CA in
+the ACMPCA issuer Lambda function, revoke the current Intermediate CA,
+and trigger cascading revocation so all reconnecting devices can
+fallback to certificate reissue when authentication fails upon host
+code connection.
+
+## Multiple Region
+
+The system can partipate in multiple region activation
+activities. Notably, there should be one domain name that the host coe
+should be sing to connect to the system, using Route53 to dynamically
+route depending on route latency.
+
+To achieve Multi Region in this case, the Intermediate CA issued from
+every ACMPCA instance in every region must be multi region replicated
+for every participating IoT Core service.
+
+The Multi Region pattern can then be implemented when the certificate
+gets registered to AWS IoT Core.  Note that the same patterns are used
+for certificate rotation in the case where the new certificate is
+registered and the old certificate is revoked.
 
 # System Implementation and Deployment
 
@@ -1234,88 +1349,6 @@ that must be put into place first:
     constrain WidgIot to use one ephemeral topic and device
     shadow. This will be constrained by client ID which is same as
     Thing ID.
--   Just In Time Provisioning (JITP) template.
--   Role for the JITP template.
-
-The IoT Policy is constrained to device shadow and ephemeral
-topic.
-
-
-    {
-      "Version": "2012-10-17",
-      "Statement": [
-        {
-          "Effect": "Allow",
-          "Action":   [ "iot:Publish" ],
-          "Resource": [ "arn:aws:iot:us-east-1:123456789012:topic/sample/topic" ]
-        }
-      ]
-    }
-
-Define the JITP template.  This template is for this example only,
-and requires modification for specific deployment.
-
-    { 
-      "templateBody" : {
-        "Parameters" : {
-          "AWS::IoT::Certificate::CommonName": {
-            "Type": "String" },
-          "AWS::IoT::Certificate::SerialNumber": {
-            "Type": "String" },
-          "AWS::IoT::Certificate::Country": {
-            "Type": "String" },
-          "AWS::IoT::Certificate::Id": {
-            "Type": "String" } },
-        "Resources": {
-          "thing": {
-            "Type": "AWS::IoT::Thing",
-            "Properties": {
-              "ThingName": {
-                "Ref": "AWS::IoT::Certificate::CommonName"
-              },
-              "AttributePayload": {
-                "version": "v1",
-                "serialNumber": {
-                  "Ref": "AWS::IoT::Certificate::SerialNumber"
-                }
-              }
-            },
-            "OverrideSettings": {
-              "AttributePayload": "MERGE",
-              "ThingTypeName": "REPLACE",
-              "ThingGroups": "DO_NOTHING" }
-          },
-          "certificate": {
-            "Type": "AWS::IoT::Certificate",
-            "Properties": {
-              "CertificateId": {
-                "Ref": "AWS::IoT::Certificate::Id" },
-              "Status": "ACTIVE" },
-            "OverrideSettings": {
-              "Status": "DO_NOTHING" } },
-          "policy": {
-            "Type": "AWS::IoT::Policy",
-            "Properties": {
-              "PolicyName": "WidgIoT"
-            }
-          }
-        }
-      },
-      "roleArn" : "arn:aws:iam::1234567890:role/Provisioning-JITP"
-    } 
-
-The `templateBody` value then needs to be stringified.
-
-    { 
-      "templateBody" : "[stringified-json]",
-      "roleArn" : "arn:aws:iam::1234567890:role/Provisioning-JITP"
-    }
-
-Then, we need to first stringify the value and make the proper
-escape sequences.
-
-    TODO 
-
 The CA that resides in ACM PCA must also reside in AWS IoT
 Core. When configuring your application to be global using the
 multi-region provisioning pattern, this CA must be registered in
@@ -1337,8 +1370,9 @@ understand how ACM PCA issues certificates, the mechanics of
 registering the generated certificate to AWS IoT Core, and linking
 up the Thing and Policy with the certificate.
 
-**Note**: The Just in Time Provisioning (JITP) process will be used in
-the next section when evaluating the end-to-end process.
+**NOTE** to verify one-offs you can also use the script
+[test-deploy.sh](script/test-deploy.sh).
+
 
 ```bash
 CERTIFICATE_AUTHORITY_ARN=$1
@@ -1349,7 +1383,7 @@ openssl genrsa -out test_client_1.key 2048
 openssl req -new \
             -key test_client_1.key \
             -out test_client_1.csr \
-            -subj "/C=US/ST=VA/L=Anywhere/O=Automatra/OU=WidgIoTus-east- 1/CN=test_client_1"
+            -subj "/C=US/ST=VA/L=Anywhere/O=Automatra/OU=${PRODUCT}-${REGION}/CN=test_client_1"
 ```
 
 Submit the CSR to ACM and retrieve the certificate.  In the end to
@@ -1391,16 +1425,18 @@ certificate retrieval.
 Create the thing and policy.
 
 ```bash
-    aws iot create-thing                  \
-        --output text  --region us-east-1 \
-        --thing-name test_client_1        \
-        --query thingArn
+aws iot create-thing                  \
+    --output text  --region ${REGION} \
+    --thing-name test_client_1        \
+    --query thingArn
     
-    aws iot attach-thing-principal        \
-        --output text  --region us-east-1 \
-        --thing-name test_client_1        \
-        --principal ${tc1_cert_iot_arn}
+aws iot attach-thing-principal        \
+    --output text  --region ${REGION} \
+    --thing-name test_client_1        \
+    --principal ${tc1_cert_iot_arn}
+```
 
+```json
     {
       "Version": "2012-10-17",
       "Statement": [{
@@ -1409,16 +1445,18 @@ Create the thing and policy.
         "Resource": ["*"]
       }]
     }
+```
 
-    
-    aws iot ${REGION} create-policy                                               \
-        --policy-name test_client_1_policy                                        \
-        --policy-document file://test_client_1_policy.json                        \
-        --query policyArn --region us-east-1
+```bash
+aws iot ${REGION} create-policy                         \
+    --policy-name test_client_1_policy                  \
+    --policy-document file://test_client_1_policy.json  \
+    --query policyArn --region ${REGION}
      
-    aws iot ${REGION} attach-principal-policy \
-        --policy-name test_client_1_policy \
-        --principal ${tc1_cert_iot_arn} --region us-east-1
+aws iot ${REGION} attach-principal-policy               \
+    --policy-name test_client_1_policy                  \
+    --principal ${tc1_cert_iot_arn}                     \
+    --region ${REGION}
 ```
 
 Checkout and configure the AWS IoT SDK for Python and use the
@@ -1429,17 +1467,27 @@ Then use the AWS IoT Device SDK for Python to test the
 connectivity.
 
 ```bash
-    endpoint=$(aws iot describe-endpoint --endpoint-type iot:Data-ATS --region us-east-1 --query endpointAddress --output text)
-    wget https://www.amazontrust.com/repository/AmazonRootCA1.pem
-    cd ..
-    git clone https://github.com/aws/aws-iot-device-sdk-python
-    cd aws-iot-device-sdk-python/samples/basicPubSub/
-    sudo pip3 install AWSIoTPythonSDK --upgrade
-    python3 basicPubSub.py \
-            -e $endpoint \
-            -k ../../../test_client_1/test_client_1.key \
-            -c ../../../test_client_1/test_client_1.pem \
-            -r ../../../test_client_1/AmazonRootCA1.pem
+endpoint=$(aws iot describe-endpoint \
+    --endpoint-type iot:Data-ATS \
+    --region ${REGION} \
+    --query endpointAddress \
+    --output text)
+
+wget https://www.amazontrust.com/repository/AmazonRootCA1.pem
+
+cd ..
+
+git clone https://github.com/aws/aws-iot-device-sdk-python
+
+cd aws-iot-device-sdk-python/samples/basicPubSub/
+
+sudo pip3 install AWSIoTPythonSDK --upgrade
+
+python3 basicPubSub.py \
+    -e $endpoint \
+    -k ../../../test_client_1/test_client_1.key \
+    -c ../../../test_client_1/test_client_1.pem \
+    -r ../../../test_client_1/AmazonRootCA1.pem
 ```
 
 ## Test Data Load 
@@ -1495,20 +1543,57 @@ To invoke the URL, click the Send button.
 
 ## Running with an Edge Device
 
+
 If you would like to simulate an edge device using Python, then 
 
 The reference implementation uses the TI CC3220SF.  However, if you do
 not have this device then you [Run the Python Test Script](#run-the-python-test-script).
 Otherwise, jump to [Run the Texas Instruments CC3220SF](#run-the-texas-instruments-cc3220sf).
 
-### Run the Python Test Script
 
 
-### Run the Texas Instruments CC3220SF
+## Local testing: AWS Device SDK for Python
+
+The AWS Device SDK for Python includes several test scripts that help
+you understand how to interoperate with AWS IoT with Python programs.
+
+If you have not deployed the system yet, please see [Where to
+Start](#where-to-start) before continuing.
+
+1. Change directory to the scripts directory.
+2. Identify the API Gateway endpoint to want to use to provision the
+   certificate. If configured, you can use your [Vanity
+   URL](#vanity-domain-names).
+3. Generate your private key and download your certificate using the
+   `test-deploy.sh` script.
+   
+   In the first line, assign the endpoint URL value to the variable
+   ENDPOINT.
+   
+   ```bash
+   $ ENDPOINT=<your endpoint here>
+   $ cd ~/iot-provisioning-secretfree/script
+   $ ./test-deploy.sh ${ENDPOINT}
+   ```
+
+3. Change directory to your home directory.  Alternatively, change
+   directory to a specific directory to where you clone or check out
+   source repositories.
+   
+   ```bash
+   $ cd ~
+   ```
+4. Clone the repository for the [AWS IoT Device SDK for
+   Python](https://github.com/aws/aws-iot-device-sdk-python).
+   
+   ```bash
+   $ git clone https://github.com/aws/aws-iot-device-sdk-python
+   ```
+
+## Texas Instruments CC3220SF
 
 In this section, you will run the demo using the public key that is
 derived from the Texas Instruments CC3220SF Network Processor (NWP)
 using the SimpleLink SDK.
-
 
 

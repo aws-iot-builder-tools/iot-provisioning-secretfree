@@ -5,12 +5,18 @@ import base64
 import os
 import OpenSSL.crypto
 from OpenSSL.crypto import load_certificate_request, FILETYPE_PEM, dump_publickey
+import string
+import random
 
 def provision_certificate( csr ):
     acmpca = boto3.client('acm-pca')
     ca_arn = os.environ['ACMPCA_CA_ARN']
         
     # Create the Certificate - duration 150 days - very arbitrary
+    # TODO: pull the Value up to environment variable driven duration
+    # TODO: pull up the SigningAlgorithm to include RSA256 as well as
+    # the two ECC curves
+    # TODO: Figure out a better way to deal with this idempotency token
     cert = acmpca.issue_certificate(
         CertificateAuthorityArn=ca_arn,
         SigningAlgorithm='SHA256WITHRSA',
@@ -19,14 +25,14 @@ def provision_certificate( csr ):
             'Value': 150,
             'Type': 'DAYS'
         },
-        IdempotencyToken='1234'
+        IdempotencyToken=''.join(random.choice(string.ascii_lowercase) for i in range(10))
     )
     
     # Fetch the certificate
     err = 1
     while 1:
         try:
-            certificate = acmpca.get_certificate(
+            certificate= acmpca.get_certificate(
                 CertificateAuthorityArn=ca_arn,
                 CertificateArn=cert['CertificateArn']
             )
@@ -37,7 +43,18 @@ def provision_certificate( csr ):
     return None
 
 def deploy_certificate( certificate ):
-    return
+    iot = boto3.client('iot')
+
+    try:
+        # TODO:  pull up values for setAsActive and status to environment variables
+        response = iot.register_certificate( certificatePem=certificate,
+                                             setAsActive=True,
+                                             status='ACTIVE' )
+        return response['certificateArn']
+    except:
+        print("ERROR: could not import certificate.")
+
+    return None
 
 def deploy_policy( certificate_arn ):
     return
@@ -134,37 +151,44 @@ def deploy_policy( certificate_arn, region, account ):
         create_policy = True
 
     if ( create_policy == True ):
-        iot.create_policy( policyName = policy_name,
-                           policyDocument = policy_document.format( region, account ) )
+        response = iot.create_policy( policyName = policy_name,
+                                      policyDocument = policy_document.format( region, account ) )
+        if ( response == None ): return None
 
-    iot.attach_policy( policyName = policy_name, target = certificate_arn )
+    try:
+        iot.attach_policy( policyName = policy_name, target = certificate_arn )
+    except:
+        return False
 
 def lambda_handler(event, context):
+    # Whoami and Whatami is important for construction region sensitive ARNs
+    region = context.invoked_function_arn.split(":")[3]
+    account = context.invoked_function_arn.split(":")[4]
+    
     csr = base64.b64decode(event['headers']['device-csr'])
     req = load_certificate_request( FILETYPE_PEM, csr )
     device_id = req.get_subject().CN
     response = provision_certificate( csr )
-    region = context.invoked_function_arn.split(":")[3]
-    account = context.invoked_function_arn.split(":")[4]
+
+    certificate = response['Certificate']
 
     # Send the certificate to AWS IoT. We assume the issuing CA has already
     # been registered.
 
-    certificate_arn = deploy_certificate( response['Certificate'] )
+    certificate_arn = deploy_certificate( certificate )
+    if ( certificate_arn == None ): return None
 
     # Create the Thing object and attach to the deployed certificate
 
     response = deploy_thing( device_id, certificate_arn )
-
-    # The entire transaction failed, so report failure.
-    if ( response == False ):
-        return None
+    if ( response == False ): return None
 
     # Create the Policy if necessary, and attach the created Policy (or
     # existing Policy) to the Thing.
 
-    deploy_policy( certificate_arn, region, account )
+    response = deploy_policy( certificate_arn, region, account )
+    if ( response == False ): return None
 
     # Return the certificate to API Gateway.
     
-    return response['Certificate']
+    return certificate
