@@ -48,7 +48,6 @@ def deploy_certificate( certificate ):
     try:
         # TODO:  pull up values for setAsActive and status to environment variables
         response = iot.register_certificate( certificatePem=certificate,
-                                             setAsActive=True,
                                              status='ACTIVE' )
         return response['certificateArn']
     except:
