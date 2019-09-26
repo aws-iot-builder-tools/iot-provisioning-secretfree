@@ -189,5 +189,8 @@ def lambda_handler(event, context):
     if ( response == False ): return None
 
     # Return the certificate to API Gateway.
-    
-    return certificate
+    iot = boto3.client('iot')
+    endpoint = iot.describe_endpoint(endpointType = 'iot:Data-ATS')
+    payload = { 'certificate': certificate,
+                'endpoint': endpoint['endpointAddress'] }
+    return json.dumps(payload)
