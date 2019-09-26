@@ -43,7 +43,11 @@ payload=$(base64 ${epoch}.csr)
 header="device-csr: ${payload}"
 
 echo fetching certificate...
-curl -s -o ${epoch}.crt.pem --header "${header}" ${endpoint}
+curl --request POST              \
+      -s                         \
+      -o ${epoch}.crt.pem        \
+      --header "${header}"       \
+      ${endpoint
 
 openssl rsa                      \
         -inform PEM              \
@@ -66,7 +70,7 @@ echo PEM CSR         : ${cwd}/${epoch}.csr.pem
 echo PEM Certificate : ${cwd}/${epoch}.crt.pem
 
 echo If you need to use certificate and key in DER format, here they
-echo are:
+echo are
 
 echo DER Private key : ${cwd}/${epoch}.key.der
 echo DER Certificate : ${cwd}/${epoch}.crt.der
