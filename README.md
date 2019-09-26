@@ -360,61 +360,20 @@ The device must have firmware implemented, or is using a peripheral, that:
 
 ### CloudFormation
 
-    AWSTemplateFormatVersion: 2010-09-09
-    Transform: AWS::Serverless-2016-10-31
-    Description: >-
-      AWS CloudFormation template for secretfree provisioning
-    Parameters:
-      TemplateBucket:
-        Default: elberger-secretfree-template
-        Description: >-
-          The S3 bucket into which the template, lambda functions, and Web
-          content have been uploaded.
-        Type: String
-      SkuName:
-        Default: widgiot
-        Description: >-
-          Usually the shortened product name, uniquely representing a
-          product line. This is done to keep multiple product capabilities
-          and certificate issuance separate from one another.
-        Type: String
-      AcmPcaCaArn:
-        Default: put-your-arn-here
-        Description: >-
-          The CA Arn for ACM PCA CA.  Note that this value is not
-          validated and is applied to the lambda function environment.
-        Type: String
+The system is deployed using CloudFormation. The CloudFormation
+template is at [cfn/secretfree.yml](cfn/secretfree.yml).
 
 The CloudFormation result emits three values.  These values are
 exported in case you wish to build upon them.  Specifically, an
 importer to the DynamoDB table may later be developed, in which
 case the target database would need to be known.
 
-    Outputs:
-      ProvisioningTableArn:
-        Description: >-
-          The ARN for the provisioning DynamoDB table.
-        Value: !GetAtt ProvisioningTable.Arn
-        Export:
-          Name: !Sub "${AWS::StackName}-ProvisioningTableArn"
-      ProvisioningTableStream:
-        Description: >-
-          The Stream ARN for the provisioning DynamoDB table.
-        Value: !GetAtt ProvisioningTable.StreamArn
-        Export:
-          Name: !Sub "${AWS::StackName}-ProvisioningTableStream"
-      ProvisioningTableName:
-        Description: >-
-          The simple name for the provisioning DynamoDB table.
-        Value: !Ref ProvisioningTable
-        Export:
-          Name: !Sub "${AWS::StackName}-ProvisioningTableName"
+- ProvisioningTableArn
+- ProvisioningTableStream
+- ProvisioningTableName
 
 The remaining CloudFormation sections are **Resources** where the
 parent node is `Resources.`
-
-    Resources:
-
 
 <a id="orgaaaa270"></a>
 
@@ -433,42 +392,11 @@ running to perform the following. If you cannot have docker, you
 will need to perform this work manually on Amazon Linux with
 `pyenv`.
 
-    D=$(dirname $0)
-    cd ${D}
-    P=$(pwd)
-    
-    echo D: ${D}
-    echo P: ${P}
-    
-    mkdir -p ${P}/../tarz
-    mkdir -p /tmp/pyopenssl
-    pushd /tmp/pyopenssl
-    
-    # get all the files for the module and dependencies
-    
-    docker run \
-           -v "$PWD":/var/task lambci/lambda:build-python3.6 /bin/bash \
-           -c "mkdir python && pip install pyOpenSSL==19.0.0 -t python/; exit"
-    
-    zip -r ${P}/../tarz/lambda-layer-pyopenssl.zip .
-    popd
-    rm -rf /tmp/pyopenssl
+The script that creates the payload for the layer is
+[script/package-lambda-layer-pyopenssl.sh](script/package-lambda-layer-pyopenssl.sh).
 
-To install the layer, evaluate the following CloudFormation resource.
-
-    pyOpensslLayer:
-      Type: AWS::Lambda::LayerVersion
-      Properties:
-        CompatibleRuntimes:
-          - 'python3.6'
-          - 'python3.7'
-        Content:
-          S3Bucket: !Ref TemplateBucket
-          S3Key: 'lambda-layer-pyopenssl.zip'
-        Description: "OpenSSL library"
-        LayerName: "PyOpenSSL"
-        LicenseInfo: "MIT"
-
+The zip file produced by the package script gets installed by the
+CloudFormation template by the **pyOpensslLayer** resource.
 
 <a id="org6e7346b"></a>
 
@@ -517,109 +445,25 @@ flow occurs after the [Lambda
 Authorizer](aws-lambda:-lambda-authorizer-for-api-gateway) completes
 successfully.
 
-TODO: DIAGRAM
-
-TODO: EXECUTION FLOW STEPS
-
 The code must be zipped up in preparation for submitting the
 payload as part of the Lambda function deployment.  This script is at
 [script/package-lambda-issuer-acmpca.sh](script/package-lambda-issuer-acmpca.sh).
 
 ## AWS Lambda: AWS IoT Core based certificate issuance
 
+The system provides a mechanism to provision certificates through IoT
+Core.  The mechanism is meant for prototyping only.  The reason is for
+production workloads it is recommended to use multi-region
+deployment. At this time, IoT Core issues certificates cannot be
+replicated to multiple regions.
 
+The lambda function is invoked by API Gateway via the **proto**
+resource with POST verb.  The CSR payload is passed to the Lambda
+function by transform.
 
-    import json
-    import boto3
-    import time
-    import base64
-    import os
-    import OpenSSL.crypto
-    from OpenSSL.crypto import load_certificate_request, FILETYPE_PEM, dump_publickey
-    
-    def get_pubkey( req ):
-        device_id = req.get_subject().CN
-    
-        d = boto3.client('dynamodb')
-        s3 = boto3.resource('s3')
-        
-        response = d.get_item(
-            Key={ 'device-id': { 'S' : device_id } },
-            TableName='widgiot-public-keys'
-        )
-    
-        s3_bucket = response['Item']['pubkey-bucket']['S']
-        s3_object = response['Item']['pubkey-object']['S']
-        content_object = s3.Object(s3_bucket, s3_object)
-        file_content = content_object.get()['Body'].read().decode('utf-8')
-    
-        return file_content
-    
-    def provision_certificate( csr, pubkey ):
-        acmpca = boto3.client('acm-pca')
-        ca_arn = os.environ['ACMPCA_CA_ARN']
-            
-        # Create the Certificate
-        # TODO: Automatically compute days remaining ... somehow?
-        cert = acmpca.issue_certificate(
-            CertificateAuthorityArn=ca_arn,
-            SigningAlgorithm='SHA256WITHRSA',
-            Csr=csr,
-            Validity={
-                'Value': 150,
-                'Type': 'DAYS'
-            },
-            IdempotencyToken='1234'
-        )
-        
-        # Fetch the certificate
-        err = 1
-        while 1:
-            try:
-                certificate = acmpca.get_certificate(
-                    CertificateAuthorityArn=ca_arn,
-                    CertificateArn=cert['CertificateArn']
-                )
-                return certificate
-            except:
-                print("Certificate not ready yet")
-                time.sleep(1)
-    
-    
-    def lambda_handler(event, context):
-        print(event)
-        print(context)
-        csr = base64.b64decode(event['headers']['device-csr'])
-        req = load_certificate_request( FILETYPE_PEM, csr )
-    
-        pubkey = get_pubkey(req)
-        response = provision_certificate(csr, pubkey)
-    
-        return response['Certificate']
-
-    P=$(dirname $0)
-    mkdir -p ${P}/../tarz
-    cd ../lambda-issuer-iotcore
-    if test $? != 0; then echo ERROR; exit 1; fi
-    zip -r ../tarz/lambda-issuer-iotcore.zip .
-
-    PerSkuLambdaProvisioningACMPCAIotCore:
-      Type: AWS::Lambda::Function
-      Properties:
-        FunctionName: !Sub ${SkuName}-secretfree-iotcore
-        Code:
-          S3Bucket: !Ref TemplateBucket
-          S3Key:    lambda-issuer-iotcore.zip
-        Role: !GetAtt PerSkuLambdaAuthorizerExecutionRole.Arn
-        Handler: main.lambda_handler
-        Runtime: python3.6
-        MemorySize: 1024
-        Layers:
-          - !Ref pyOpensslLayer
-        Environment:
-          Variables:
-            ACMPCA_CA_ARN: !Ref AcmPcaCaArn
-            SECRETFREE_TABLENAME: !Ref ProvisioningTable
+The code must be zipped up in preparation for submitting the payload
+as part of the Lambda function deployment.  This script is at
+[script/package-lambda-issuer-iotcore.sh](script/package-lambda-issuer-iotcore.sh).
 
 ## API Gateway Endpoint, Resource, Method, Model, and Response
 
@@ -627,179 +471,12 @@ API Gateway is used to manage the plumbing for the device POST to
 the cloud composed of a basic header parameter of a CSR payload.
 
 Once created, then we will create the resource upon which IoT
-devices will call with POST and the CSR payload.
+devices will call with POST and the CSR payload in the header.  The
+reason the CSR is in the header is the public key derived from the
+signature on the CSR will be used for the custom authorizer, and the
+only way to pass it to the custom authorizer is the header.
 
-    ProvisioningRestApi:
-      Type: AWS::ApiGateway::RestApi
-      Properties:
-        Name: !Sub "${SkuName}-IoTProvisioning"
-        Description: >-
-          !Sub "This API enables certificate provisioning for the ${SkuName} product line."
-        ApiKeySourceType: HEADER
-        EndpointConfiguration:
-          Types:
-            - REGIONAL
-
-Next, we create the Custom Authorizer for the API in API Gateway.
-
-    
-    ProvisioningResourceAuthorizer:
-      Type: AWS::ApiGateway::Resource
-      Properties:
-        RestApiId: !Ref ProvisioningRestApi
-        ParentId: !GetAtt ProvisioningRestApi.RootResourceId
-        PathPart: authorizer
-
-Next, we configure the New resource to use the Custom
-Authorizer. The following defines the REST API endpoint for the
-Lambda Authorizer.
-
-    
-    ProvisioningResourceNew:
-      Type: AWS::ApiGateway::Resource
-      Properties:
-        RestApiId: !Ref ProvisioningRestApi
-        ParentId:  !GetAtt ProvisioningRestApi.RootResourceId
-        PathPart: new
-
-Create the Lambda function that the POST method will invoke.  You
-will need to perform the following steps, which includes zipping
-the Lambda function to include dependent libraries.
-
-[write steps/cli here]
-
-1.  On the command line, change directory to ~/ti-provisioning/widgiot-post.
-2.  Create file named widgiot-post.py.
-3.  Enter the following into widgiot-post.py.
-
-Next, we must create models for the Request and Response.  For the
-Request, we define Device ID, Signature, and CSR.  For Response, we
-define Certificate.  The models are named NewCertificateInputModel
-and NewCertificateOutputModel respectively.
-
-Create the Response Model.
-
-The output model is required to tailor the output as block text.
-This output model is *deprecated* and will be removed in a later
-release since the `RESPONSE` is a text/plain certificate block.
-
-    
-    ProvisioningMethodOutputModel:
-      Type: AWS::ApiGateway::Model
-      Properties:
-        RestApiId: !Ref ProvisioningRestApi
-        Name: NewCertificateOutputModel
-        Description: >-
-          This model describes the output payload for requesting a new certificate
-        ContentType: application/json
-        Schema: >-
-          {
-          "$schema": "http://json-schema.org/draft-04/schema#",
-          "title": "NewCertificateOutputModel",
-          "type": "object",
-          "properties": {
-            "Certificate": { "type": "string" },
-            "CertificateChain": { "type": "string" }
-           }}
-
-Next, we create the POST method for the New (/new) resource to
-invoke the Lambda function that is responsible for the certificate
-provisioning actions with ACM PCA.
-
-    ProvisioningMethodNewPost:
-      Type: AWS::ApiGateway::Method
-      Properties:
-        RestApiId: !Ref ProvisioningRestApi
-        ResourceId: !Ref ProvisioningResourceNew
-        ApiKeyRequired: False
-        AuthorizationType: CUSTOM
-        AuthorizerId: !Ref ProvisioningAuthorizer
-        HttpMethod: POST
-        RequestParameters: { "method.request.header.device-csr": true }
-        Integration:
-          Type: AWS
-          IntegrationHttpMethod: POST
-          Uri: !Join
-            - ':'
-            - - arn
-              - aws
-              - apigateway
-              - !Ref AWS::Region
-              - lambda
-              - path/2015-03-31/functions/arn
-              - aws
-              - lambda
-              - !Ref AWS::Region
-              - !Ref AWS::AccountId
-              - function
-              - !Sub ${SkuName}-provisioning-acmpca-${AWS::StackName}/invocations
-          RequestTemplates:
-            application/json: >-
-              {
-              "method" : "$context.httpMethod",
-              "body"   : $input.json('$'),
-              "headers": {
-                #foreach($param in $input.params().header.keySet())
-                "$param" : "$util.escapeJavaScript($input.params().header.get($param))"
-                    #if($foreach.hasNext),#end
-                #end
-              }
-              }
-          RequestParameters: { "integration.request.header.device-csr": "method.request.header.device-csr" }
-          PassthroughBehavior: WHEN_NO_TEMPLATES
-          ContentHandling: CONVERT_TO_TEXT
-          TimeoutInMillis: 29000
-          IntegrationResponses:
-            - StatusCode: 200
-              ResponseTemplates: { "application/json" : "$input.json('$.body')" }
-        MethodResponses:
-          - StatusCode: 200
-            ResponseModels: { "application/json" : "NewCertificateOutputModel" }
-    
-    ProvisioningAuthorizer:
-      Type: AWS::ApiGateway::Authorizer
-      Properties:
-        AuthorizerResultTtlInSeconds: 0
-        AuthorizerUri: !Join
-          - ':' 
-          - - arn
-            - aws
-            - apigateway
-            - !Ref AWS::Region
-            - lambda
-            - path/2015-03-31/functions/arn
-            - aws
-            - lambda
-            - !Ref AWS::Region
-            - !Ref AWS::AccountId
-            - function
-            - !Sub ${SkuName}-authorizer-${AWS::StackName}/invocations
-        Type: REQUEST
-        IdentitySource: method.request.header.device-csr
-        Name: CsrAuthorizer
-        RestApiId: !Ref ProvisioningRestApi
-
-Next, we deploy the API. Deploying the API makes the endpoint “live”
-for external clients.  The deployment Stage is named `Test`.  This
-document may be amended later to include a CloudWatch logging
-group.
-
-    ProvisioningDeploymentTest:
-      Type: AWS::ApiGateway::Deployment
-
-The deployment must wait for the method to be constucted or else an
-error results; please consult the CloudFormation developer guide for
-more information.
-
-    DependsOn: ProvisioningResourceNew
-    Properties:
-
-We use the StageName `Test` as a placeholder to verify straight
-through client testing.  In your deployment, this should align with
-the way you have defined your pipeline.
-
-    StageName: Test
-    RestApiId: !Ref ProvisioningRestApi
+The API is installed using the CloudFormation script.
 
 ## Upload and Deployment
 
