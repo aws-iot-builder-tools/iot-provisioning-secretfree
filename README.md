@@ -111,10 +111,10 @@ specific region.
    ```bash
    $ git clone https://github.com/aws-samples/iot-provisioning-secretfree.git
    ```
-2. Change directory to scripts.
+2. Change directory to script.
 
    ```bash
-   $ cd iot-provisioning-secretfree/scripts
+   $ cd iot-provisioning-secretfree/script
    ```
 3. Deploy the system. Since your provisioning may slightly differ
    between products you are shipping, you must provide a SKU Name.
