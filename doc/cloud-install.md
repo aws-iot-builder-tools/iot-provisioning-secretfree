@@ -173,7 +173,7 @@ If you are configuring for use with AWS IoT Core (recommended for
 prototyping or evaluation), and running from your local system, you
 would invoke the following:
 
-    ./build-and-upload.sh
+    ./build-and-upload.sh superUniquePrefix
 
 If you are configuring this with ACM PCA (strongly recommended for
 multi-region production environments).  First you need to get the
@@ -192,12 +192,12 @@ The first argument, which is
 the ACM PCA CA Arn, must be applied to the command line, for example:
 
 ```bash
-./build-and-upload.sh ${CertificateAuthorityArn}
+./build-and-upload.sh superUniquePrefix ${CertificateAuthorityArn}
 ```
 
 And if you want to override the SKUNAME and possibly the target
 REGION, the command line would be configured like:
 
 ```bash
-SKUNAME=superUniquePrefix REGION=us-west-2 ./build-and-upload.sh ${CertificateAuthorityArn}
+REGION=us-west-2 ./build-and-upload.sh superUniquePrefix ${CertificateAuthorityArn}
 ```
