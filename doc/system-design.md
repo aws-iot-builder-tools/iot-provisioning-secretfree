@@ -29,7 +29,7 @@ the global provisioning pattern.
 The execution architecture for issuing certificates using ACM PCA is
 defined by the following diagram.
 
-![Secretless-ACMPCA.png](img/Secretless-ACMPCA.png)
+![Secretless-ACMPCA.png](../img/Secretless-ACMPCA.png)
 
 1. The PKI Admin would have received a CSR from ACM PCA and a *parent
    issuer* then issues the certificate.  The PKI Admin then submits
@@ -95,7 +95,7 @@ Note that the authorization steps 1-5 remain the same as ACM PCA
 issuance steps 1-6 (with the exception of PKI admin activities) so
 they will not be restated here.
 
-![Secretless-IoT.png](img/Secretless-IoT.png)
+![Secretless-IoT.png](../img/Secretless-IoT.png)
 
 6. Upon receiving the CSR, the certificate issuer lambda creates the
    certificate with AWS IoT Core using the CSR.  Once done, the lambda
