@@ -31,8 +31,7 @@ for i in {1..5}; do
 
     # This gets derived by the line test probe
     echo Deriving public key from private key for device [$i]
-    openssl rsa -in $DEVICES/e2e_$i.key -out $DEVICES/e2e_$i.pub \
-            > /dev/null 2>&1
+    openssl rsa -in $DEVICES/e2e_$i.key -pubout -out $DEVICES/e2e_$i.pub
 
     if test $? != 0; then
        echo Error hard stop.
