@@ -128,56 +128,6 @@ python3 basicPubSub.py \
     -r ../../../test_client_1/AmazonRootCA1.pem
 ```
 
-## Test Data Load 
-    
-The test data creates five "devices" with an incrementing serial
-number from 1..5.  The local device artifacts (private key, public
-key, and certificate) are created in `ROOT/demo/devices` and are named
-with the prefix **e2e_**.
-
-The entries are then put to DynamoDB.
-
-Invoke the `load-data.sh` script with no arguments.  Modify the
-Subject in the script if you customized it in the earlier section.
-
-```bash
-cd ROOT/demo/script
-./load-data.sh
-```
-
-## Verifying the AWS API Gateway processing
-
-The AWS API Gateway processing can be manually tested using
-[Postman](https://www.getpostman.com/).  In this test, we will be
-using the CSR generated in the previous section.
-
-Test the payload to receive the response.
-
-1.  Open Postman.
-2.  If you haven't already created a collection for testing, create
-    a collection.
-    1.  Name it WidgIoT Certificate Test
-    2.  Click Create.
-3.  Create a new Request. make the Request Name **Happy Path** and
-    Request description **This test should always provision a
-    certificate**.
-4.  Click the new request on the left hand side.
-5.  On the right hand side, right under the 'Happy Path' title,
-    there is a drop down for the type of request. Select POST.
-6.  Next, implement the headers for device-id and device-sig. These
-    values are used for the custom authorizer.  Click on the
-    headers tab and enter the values accordingly.
-
-Next, we enter the Request body.  It will look something like this.
-Note that the format is RAW and set to `application/json`.
-
-Next, enter the request URL.  Get this from your deployed API in the stage Live.
-
-1.  In the AWS API Gateway console, click WidgIoTProvisioning > Stages.
-2.  At the top of the page, you will see the Invoke URL.  Copy the URL.
-3.  Paste the URL in postman request URL input.  Append '/new'.
-
-To invoke the URL, click the Send button.
 
 ## Running with an Edge Device
 
