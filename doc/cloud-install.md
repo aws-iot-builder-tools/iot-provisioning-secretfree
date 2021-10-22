@@ -1,5 +1,70 @@
 # System Implementation and Deployment
 
+Table of contents
+
+- [Invoke the installation](invoke-the-installation)
+- [Installation details](installation-details)
+
+## Invoke the installation
+
+Jump:
+- [Invoke with AWS issuer](#invoke-with-aws-issuer)
+- [Invoke with ACM-PCA issuer](#invoke-with-acm-pca-issuer)
+
+Several scripts have been added to aid in the deployment process.
+The template and lambda function payloads must be staged to Amazon
+S3. After staging, you can invoke CloudFormation using the uploaded
+template.
+
+The process is fully automated with the `build-and-upload.sh` script.
+This script invokes the scripts to build the layer and lambda function
+packages described in the previous section.  It also ensures you have
+an S3 bucket created. The script **requires** the first parameter to
+be the SKUNAME which serves as a unique prefix. The script takes a
+second parameter which is the ACM-PCA certificate authority ARN.
+
+### Invoke with AWS issuer
+
+If you are configuring for use with AWS IoT Core (recommended for
+prototyping or evaluation), and running from your local system, you
+would invoke the following:
+
+```bash
+cd script
+./build-and-upload.sh superUniquePrefix
+```
+
+### Invoke with ACM-PCA issuer
+
+If you are configuring this with ACM PCA (strongly recommended for
+multi-region production environments).  First you need to get the
+Arn.  The best way to search for that might me the CA's
+CommonName.  For example, when having the Common Name
+`us-east-1.widgiot.automatra.net`, we could find it by:
+
+    COMMON_NAME=${1:=us-east-1.widgiot.automatra.net}
+    CertificateAuthorityArn=$(aws acm-pca list-certificate-authorities \
+                                  --query "CertificateAuthorities[?CertificateAuthorityConfiguration.Subject.CommonName=='${COMMON_NAME}'].Arn" \
+                                  --output text)
+
+This script is named get-pcmcia-ca-arn.sh in scripts/ for your convenience.
+
+The first argument, which is
+the ACM PCA CA Arn, must be applied to the command line, for example:
+
+```bash
+cd script
+./build-and-upload.sh superUniquePrefix ${CertificateAuthorityArn}
+```
+
+And if you want to override the SKUNAME and possibly the target
+REGION, the command line would be configured like:
+
+```bash
+cd script
+REGION=us-west-2 ./build-and-upload.sh superUniquePrefix ${CertificateAuthorityArn}
+```
+
 ## Prerequisites
 
 The majority of the installation is performed through
@@ -148,56 +213,5 @@ only way to pass it to the custom authorizer is the header.
 
 The API is installed using the CloudFormation script.
 
-## Upload and Deployment
 
-Several scripts have been added to aid in the deployment process.
-The template and lambda function payloads must be staged to Amazon
-S3. After staging, you can invoke CloudFormation using the uploaded
-template.
 
-First, invoke the `build-and-upload.sh` script.  This script invokes
-the scripts to build the layer and lambda function packages
-described in the previous section.  It also ensures you have an S3
-bucket created.
-
-The script has relatively sane defaults.  If you are running in
-EC2, you will likely need to override these values.
-
--   `PREFIX`: the same value as `$USER` in your command line
-    environment.  If you find that the S3 bucket name is not usique,
-    you will need to override this value.
--   `REGION`: the same value configured for your default AWS
-    credential.
-
-If you are configuring for use with AWS IoT Core (recommended for
-prototyping or evaluation), and running from your local system, you
-would invoke the following:
-
-    ./build-and-upload.sh superUniquePrefix
-
-If you are configuring this with ACM PCA (strongly recommended for
-multi-region production environments).  First you need to get the
-Arn.  The best way to search for that might me the CA's
-CommonName.  For example, when having the Common Name
-`us-east-1.widgiot.automatra.net`, we could find it by:
-
-    COMMON_NAME=${1:=us-east-1.widgiot.automatra.net}
-    CertificateAuthorityArn=$(aws acm-pca list-certificate-authorities \
-                                  --query "CertificateAuthorities[?CertificateAuthorityConfiguration.Subject.CommonName=='${COMMON_NAME}'].Arn" \
-                                  --output text)
-
-This script is named get-pcmcia-ca-arn.sh in scripts/ for your convenience.
-
-The first argument, which is
-the ACM PCA CA Arn, must be applied to the command line, for example:
-
-```bash
-./build-and-upload.sh superUniquePrefix ${CertificateAuthorityArn}
-```
-
-And if you want to override the SKUNAME and possibly the target
-REGION, the command line would be configured like:
-
-```bash
-REGION=us-west-2 ./build-and-upload.sh superUniquePrefix ${CertificateAuthorityArn}
-```
