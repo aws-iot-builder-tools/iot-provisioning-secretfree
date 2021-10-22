@@ -111,7 +111,7 @@ def deploy_policy( certificate_arn, region, account ):
         "iot:Publish",
         "iot:Receive"
       ],
-      "Resource": [[
+      "Resource": [
         "arn:aws:iot:{0}:{1}:topic/sdk/test/java",
         "arn:aws:iot:{0}:{1}:topic/sdk/test/Python",
         "arn:aws:iot:{0}:{1}:topic/topic_1",
