@@ -1,0 +1,15 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "pip"
+    directories:
+      - "/"
+      - "/src/authorizer/"
+      - "/src/issuer-acmpca/"
+      - "/src/issuer-iotcore/"
+    schedule:
+      interval: "weekly"
