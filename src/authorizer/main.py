@@ -1,17 +1,21 @@
-import json
+"""
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
+Lambda function to decompose Infineon based certificate manifest(s) and begin
+the import processing pipeline
+"""
 import base64
-import boto3
 import re
-import time
-import pprint
 import os
+import boto3
 import OpenSSL.crypto
 from OpenSSL.crypto import load_certificate_request, FILETYPE_PEM, dump_publickey
 
 def get_pubkey( req ):
     device_id = req.get_subject().CN
     d = boto3.client('dynamodb')
-    
+
     response = d.get_item(
         Key={ 'device-id': { 'S' : device_id } },
         TableName=os.environ['SECRETFREE_TABLENAME']

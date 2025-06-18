@@ -1,22 +1,31 @@
+"""
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
+Lambda function to decompose Infineon based certificate manifest(s) and begin
+the import processing pipeline
+"""
 import json
-import boto3
 import time
 import base64
 import os
-import OpenSSL.crypto
-from OpenSSL.crypto import load_certificate_request, FILETYPE_PEM, dump_publickey
 import string
 import random
+import boto3
+from OpenSSL.crypto import load_certificate_request, FILETYPE_PEM
 
 def provision_certificate( csr ):
+    """
+    Create the Certificate - duration 150 days - very arbitrary
+    TODO: pull the Value up to environment variable driven duration
+    TODO: pull up the SigningAlgorithm to include RSA256 as well as
+          the two ECC curves
+    TODO: Figure out a better way to deal with this idempotency token
+    """
+
     acmpca = boto3.client('acm-pca')
     ca_arn = os.environ['ACMPCA_CA_ARN']
-        
-    # Create the Certificate - duration 150 days - very arbitrary
-    # TODO: pull the Value up to environment variable driven duration
-    # TODO: pull up the SigningAlgorithm to include RSA256 as well as
-    # the two ECC curves
-    # TODO: Figure out a better way to deal with this idempotency token
+
     cert = acmpca.issue_certificate(
         CertificateAuthorityArn=ca_arn,
         SigningAlgorithm='SHA256WITHRSA',
@@ -54,9 +63,6 @@ def deploy_certificate( certificate ):
         print("ERROR: could not import certificate.")
 
     return None
-
-def deploy_policy( certificate_arn ):
-    return
 
 # The deploy_thing function assumes a unique identifier for a given SKU.
 # Since this can be a certificate reissue, an existing Thing will be attached
@@ -163,7 +169,7 @@ def lambda_handler(event, context):
     # Whoami and Whatami is important for construction region sensitive ARNs
     region = context.invoked_function_arn.split(":")[3]
     account = context.invoked_function_arn.split(":")[4]
-    
+
     csr = base64.b64decode(event['headers']['device-csr'])
     req = load_certificate_request( FILETYPE_PEM, csr )
     device_id = req.get_subject().CN
@@ -175,18 +181,21 @@ def lambda_handler(event, context):
     # been registered.
 
     certificate_arn = deploy_certificate( certificate )
-    if ( certificate_arn == None ): return None
+    if certificate_arn is None:
+        return None
 
     # Create the Thing object and attach to the deployed certificate
 
     response = deploy_thing( device_id, certificate_arn )
-    if ( response == False ): return None
+    if response is False:
+        return None
 
     # Create the Policy if necessary, and attach the created Policy (or
     # existing Policy) to the Thing.
 
     response = deploy_policy( certificate_arn, region, account )
-    if ( response == False ): return None
+    if response is False:
+        return None
 
     # Return the certificate to API Gateway.
     iot = boto3.client('iot')

@@ -1,11 +1,19 @@
-import json
-import boto3
-import time
+"""
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
+Lambda function to decompose Infineon based certificate manifest(s) and begin
+the import processing pipeline
+"""
 import base64
 import os
-import sys
-import OpenSSL.crypto
-from OpenSSL.crypto import load_certificate_request, FILETYPE_PEM, dump_publickey
+import logging
+import boto3
+from botocore.exceptions import ClientError
+from OpenSSL.crypto import load_certificate_request, FILETYPE_PEM
+
+logger = logging.getLogger()
+logger.setLevel("INFO")
 
 def provision_certificate( csr ):
     iot = boto3.client('iot')
@@ -13,47 +21,53 @@ def provision_certificate( csr ):
     try:
         return iot.create_certificate_from_csr( certificateSigningRequest=csr.decode('ascii'),
                                                 setAsActive=True )
-    except Exception as e:
-        print("Certificate issue failed: ", e)
-        return None
-
-    return None
+    except ClientError as error:
+        error_code = error.response['Error']['Code']
+        error_message = error.response['Error']['Message']
+        logger.error("Certificate creation failed: %s: %s.", error_code, error_message)
+        return False
 
 # The certificate is already deployed.
 def deploy_certificate( certificate ):
     return None
 
-# The deploy_thing function assumes a unique identifier for a given SKU.
-# Since this can be a certificate reissue, an existing Thing will be attached
-# to the newly issued certificate.  Deactivation of existing attached certificates
-# is outside the bounds of this operation.
 
 def deploy_thing( device_id, certificate_arn ):
+    """
+    The deploy_thing function assumes a unique identifier for a given SKU.
+    Since this can be a certificate reissue, an existing Thing will be attached
+    to the newly issued certificate.  Deactivation of existing attached certificates
+    is outside the bounds of this operation.
+
+    Identify if an existing Thing exists with the device ID. If yes, then use
+    that Thing for certificate attachment.  Otherwise, create a new Thing.
+    """
     iot = boto3.client('iot')
-
-    # Identify if an existing Thing exists with the device ID. If yes, then use
-    # that Thing for certificate attachment.  Otherwise, create a new Thing.
-
     thing_name = None
-    
+
     try:
         iot.describe_thing( thingName = device_id )
         thing_name = device_id
     except:
         print( "Thing [{}] does not exist. Will create.".format( device_id ) )
 
-    if ( thing_name == None ):
+    if thing_name is None:
         try:
             iot.create_thing( thingName = device_id )
             thing_name = device_id
-        except:
-            print( "Thing [{}] does not exist and failed to create.".format( device_id ) )
+        except ClientError as error:
+            error_code = error.response['Error']['Code']
+            error_message = error.response['Error']['Message']
+            logger.error("Thing creation failed: %s: %s.", error_code, error_message)
             return False
 
     # Attach the Thing to the Certificate.
     try:
         iot.attach_thing_principal( thingName = thing_name, principal = certificate_arn )
-    except:
+    except ClientError as error:
+        error_code = error.response['Error']['Code']
+        error_message = error.response['Error']['Message']
+        logger.error("Principal attachment failed: %s: %s.", error_code, error_message)
         return False
 
     return True
@@ -141,16 +155,15 @@ def lambda_handler(event, context):
     response = deploy_thing( device_id, certificate_arn )
 
     # The entire transaction failed, so report failure.
-    if ( response == False ):
+    if response is False:
         return None
 
     # Create the Policy if necessary, and attach the created Policy (or
     # existing Policy) to the Thing.
 
     deploy_policy( certificate_arn, region, account )
-    if ( response == False ):
+    if response is False:
         return None
 
     # Return the certificate to API Gateway.
-    
     return certificate_body
