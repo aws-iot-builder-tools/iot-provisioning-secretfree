@@ -1,5 +1,6 @@
 -r src/authorizer/requirements.txt
 -r src/issuer-acmpca/requirements.txt
 -r src/issuer-iotcore/requirements.txt
+-r test/unit/requirements.txt
 fastjsonschema==2.21.1
 pyYAML==6.0.2
