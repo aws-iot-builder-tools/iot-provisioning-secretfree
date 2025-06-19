@@ -13,6 +13,9 @@ import OpenSSL.crypto
 from OpenSSL.crypto import load_certificate_request, FILETYPE_PEM, dump_publickey
 
 def get_pubkey( req ):
+    """
+    Fetch the public key from the DynamoDB table.
+    """
     device_id = req.get_subject().CN
     d = boto3.client('dynamodb')
 
@@ -24,9 +27,11 @@ def get_pubkey( req ):
     return response['Item']['pubkey']['S']
 
 def lambda_handler(event, context):
-    print("Method ARN: " + event['methodArn'])
-    principalId = "user|a1b2c3d4"
-    
+    """
+    Main routine
+    """
+    principal_id = "user|a1b2c3d4"
+
     # Get the public key from the CSR
     device_csr = base64.b64decode(event['headers']['device-csr']).decode('utf-8')
     req = load_certificate_request( FILETYPE_PEM, device_csr )
@@ -38,23 +43,23 @@ def lambda_handler(event, context):
     ori_pubkey_pem = base64.b64decode(get_pubkey(req))
     pubbuf = OpenSSL.crypto.load_publickey(FILETYPE_PEM, ori_pubkey_pem)
     ori_pubkey_pem = dump_publickey( FILETYPE_PEM, pubbuf)
-    
+
     print(ori_pubkey_pem)
     print(req_pubkey_pem)
-    
-    if ( ori_pubkey_pem == req_pubkey_pem ):
+
+    if ori_pubkey_pem == req_pubkey_pem:
         # Return 201 and respond w sigv4 uri to signed certificate
         tmp = event['methodArn'].split(':')
         apiGatewayArnTmp = tmp[5].split('/')
-        awsAccountId = tmp[4]
-    
-        policy = AuthPolicy(principalId, awsAccountId)
+        account_id = tmp[4]
+
+        policy = AuthPolicy(principal_id, account_id)
         policy.restApiId = apiGatewayArnTmp[0]
         policy.region = tmp[3]
         policy.stage = apiGatewayArnTmp[1]
         policy.allowMethod(HttpVerb.POST, "/new")
         policy.allowMethod(HttpVerb.POST, "/proto")
-    
+
         # Finally, build the policy
         authResponse = policy.build()
 
@@ -73,20 +78,25 @@ class HttpVerb:
     ALL     = "*"
 
 class AuthPolicy(object):
-    awsAccountId = ""
-    """The AWS account id the policy will be generated for. This is used to create the method ARNs."""
-    principalId = ""
+    """
+    The AWS account id the policy will be generated for. This is used to
+    create the method ARNs.
+    """
+    account_id = ""
     """The principal used for the policy, this should be a unique identifier for the end user."""
-    version = "2012-10-17"
+    principal_id = ""
     """The policy version used for the evaluation. This should always be '2012-10-17'"""
-    pathRegex = "^[/.a-zA-Z0-9-\*]+$"
+    version = "2012-10-17"
     """The regular expression used to validate resource paths for the policy"""
+    path_regex = "^[/.a-zA-Z0-9-\*]+$"
 
-    """these are the internal lists of allowed and denied methods. These are lists
+    """
+    these are the internal lists of allowed and denied methods. These are lists
     of objects and each object has 2 properties: A resource ARN and a nullable
     conditions statement.
     the build method processes these lists and generates the approriate
-    statements for the final policy"""
+    statements for the final policy
+    """
     allowMethods = []
     denyMethods = []
 
@@ -109,9 +119,9 @@ class AuthPolicy(object):
         statement can be null."""
         if verb != "*" and not hasattr(HttpVerb, verb):
             raise NameError("Invalid HTTP verb " + verb + ". Allowed verbs in HttpVerb class")
-        resourcePattern = re.compile(self.pathRegex)
+        resourcePattern = re.compile(self.path_regex)
         if not resourcePattern.match(resource):
-            raise NameError("Invalid resource path: " + resource + ". Path should match " + self.pathRegex)
+            raise NameError("Invalid resource path: " + resource + ". Path should match " + self.path_regex)
 
         if resource[:1] == "/":
             resource = resource[1:]
@@ -147,8 +157,10 @@ class AuthPolicy(object):
         return statement
 
     def _getStatementForEffect(self, effect, methods):
-        """This function loops over an array of objects containing a resourceArn and
-        conditions statement and generates the array of statements for the policy."""
+        """
+        This function loops over an array of objects containing a resourceArn and
+        conditions statement and generates the array of statements for the policy.
+        """
         statements = []
 
         if len(methods) > 0:
@@ -168,33 +180,47 @@ class AuthPolicy(object):
         return statements
 
     def allowAllMethods(self):
-        """Adds a '*' allow to the policy to authorize access to all methods of an API"""
+        """
+        Adds a '*' allow to the policy to authorize access to all methods of an API
+        """
         self._addMethod("Allow", HttpVerb.ALL, "*", [])
 
     def denyAllMethods(self):
-        """Adds a '*' allow to the policy to deny access to all methods of an API"""
+        """
+        Adds a '*' allow to the policy to deny access to all methods of an API
+        """
         self._addMethod("Deny", HttpVerb.ALL, "*", [])
 
     def allowMethod(self, verb, resource):
-        """Adds an API Gateway method (Http verb + Resource path) to the list of allowed
-        methods for the policy"""
+        """
+        Adds an API Gateway method (Http verb + Resource path) to the list of allowed
+        methods for the policy
+        """
         self._addMethod("Allow", verb, resource, [])
 
     def denyMethod(self, verb, resource):
-        """Adds an API Gateway method (Http verb + Resource path) to the list of denied
-        methods for the policy"""
+        """
+        Adds an API Gateway method (Http verb + Resource path) to the list of denied
+        methods for the policy
+        """
         self._addMethod("Deny", verb, resource, [])
 
     def allowMethodWithConditions(self, verb, resource, conditions):
-        """Adds an API Gateway method (Http verb + Resource path) to the list of allowed
+        """
+        Adds an API Gateway method (Http verb + Resource path) to the list of allowed
         methods and includes a condition for the policy statement. More on AWS policy
-        conditions here: http://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements.html#Condition"""
+        conditions here:
+        http://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements.html#Condition
+        """
         self._addMethod("Allow", verb, resource, conditions)
 
     def denyMethodWithConditions(self, verb, resource, conditions):
-        """Adds an API Gateway method (Http verb + Resource path) to the list of denied
+        """
+        Adds an API Gateway method (Http verb + Resource path) to the list of denied
         methods and includes a condition for the policy statement. More on AWS policy
-        conditions here: http://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements.html#Condition"""
+        conditions here:
+        http://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements.html#Condition
+        """
         self._addMethod("Deny", verb, resource, conditions)
 
     def build(self):
@@ -214,7 +240,9 @@ class AuthPolicy(object):
             }
         }
 
-        policy['policyDocument']['Statement'].extend(self._getStatementForEffect("Allow", self.allowMethods))
-        policy['policyDocument']['Statement'].extend(self._getStatementForEffect("Deny", self.denyMethods))
+        policy['policyDocument']['Statement'].extend(self._getStatementForEffect("Allow",
+                                                                                 self.allowMethods))
+        policy['policyDocument']['Statement'].extend(self._getStatementForEffect("Deny",
+                                                                                 self.denyMethods))
 
         return policy

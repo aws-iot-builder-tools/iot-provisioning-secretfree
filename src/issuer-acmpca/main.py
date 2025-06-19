@@ -11,8 +11,13 @@ import base64
 import os
 import string
 import random
+import logging
 import boto3
+from botocore.exceptions import ClientError
 from OpenSSL.crypto import load_certificate_request, FILETYPE_PEM
+
+logger = logging.getLogger()
+logger.setLevel("INFO")
 
 def provision_certificate( csr ):
     """
@@ -25,20 +30,21 @@ def provision_certificate( csr ):
 
     acmpca = boto3.client('acm-pca')
     ca_arn = os.environ['ACMPCA_CA_ARN']
+    cert_validity_days = int(os.environ('CERT_VALIDITY_DAYS'))
 
     cert = acmpca.issue_certificate(
         CertificateAuthorityArn=ca_arn,
         SigningAlgorithm='SHA256WITHRSA',
         Csr=csr,
         Validity={
-            'Value': 150,
+            'Value': cert_validity_days,
             'Type': 'DAYS'
         },
         IdempotencyToken=''.join(random.choice(string.ascii_lowercase) for i in range(10))
     )
-    
+
     # Fetch the certificate
-    err = 1
+    # TODO: this is wildly unacceptable, needs a backoff with iteration cutoff
     while 1:
         try:
             certificate= acmpca.get_certificate(
@@ -46,8 +52,10 @@ def provision_certificate( csr ):
                 CertificateArn=cert['CertificateArn']
             )
             return certificate
-        except:
-            print("Certificate not ready yet")
+        except ClientError as error:
+            error_code = error.response['Error']['Code']
+            error_message = error.response['Error']['Message']
+            logger.error("Certificate not ready yet: %s: %s.", error_code, error_message)
             time.sleep(1)
     return None
 
@@ -59,10 +67,11 @@ def deploy_certificate( certificate ):
         response = iot.register_certificate( certificatePem=certificate,
                                              status='ACTIVE' )
         return response['certificateArn']
-    except:
-        print("ERROR: could not import certificate.")
-
-    return None
+    except ClientError as error:
+        error_code = error.response['Error']['Code']
+        error_message = error.response['Error']['Message']
+        logger.error("Could not register certificate: %s: %s.", error_code, error_message)
+        raise error
 
 # The deploy_thing function assumes a unique identifier for a given SKU.
 # Since this can be a certificate reissue, an existing Thing will be attached
@@ -76,27 +85,34 @@ def deploy_thing( device_id, certificate_arn ):
     # that Thing for certificate attachment.  Otherwise, create a new Thing.
 
     thing_name = None
-    
-    try:
-        iot.describe_thing( thingName = device_id )
-        thing_name = device_id
-    except:
-        print( "Thing [{}] does not exist. Will create.".format( device_id ) )
 
-    if ( thing_name == None ):
+    try:
+        iot.describe_thing(thingName=device_id)
+        thing_name = device_id
+    except ClientError as error:
+        error_code = error.response['Error']['Code']
+        error_message = error.response['Error']['Message']
+        logger.info("Thing [%s] does not exist. Will create: %s: %s.",
+                    device_id, error_code, error_message)
         try:
-            iot.create_thing( thingName = device_id )
+            iot.create_thing(thingName=device_id)
             thing_name = device_id
-        except:
-            print( "Thing [{}] does not exist and failed to create.".format( device_id ) )
-            return False
+        except ClientError as error_cr:
+            error_code = error_cr.response['Error']['Code']
+            error_message = error_cr.response['Error']['Message']
+            logger.info("Thing [%s] does not exist and failed to create. %s: %s.",
+                        device_id, error_code, error_message)
+            raise error_cr
 
     # Attach the Thing to the Certificate.
     try:
         iot.attach_thing_principal( thingName = thing_name, principal = certificate_arn )
-    except:
-        return False
-
+    except ClientError as error:
+        error_code = error.response['Error']['Code']
+        error_message = error.response['Error']['Message']
+        logger.info("Thing [%s] failed to attach to principal [%s]. %s: %s.",
+                    device_id, certificate_arn, error_code, error_message)
+        raise error
     return True
 
 # The deploy_policy function is an example for deploying a single
