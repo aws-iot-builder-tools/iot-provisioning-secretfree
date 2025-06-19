@@ -1,0 +1,68 @@
+name: Secretfree Continuous Integration
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  SAMLint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.13
+      - name: 'Install dependencies'
+        run: |
+          pip install -r ./requirements.txt
+          pip install anybadge
+      - name: Setup AWS SAM
+        uses: aws-actions/setup-sam@819220f63fb333a9a394dd0a5cab2d8303fd17e2
+      - name: Validate template
+        id: samlint
+        run: sam validate --lint
+        continue-on-error: true
+      - name: Pass badge
+        if: steps.samlint.outcome == 'success'
+        run: |
+          anybadge --overwrite --label "SAM Lint" --value "Passing" --file .github/samlint.svg Passing=green
+      - name: Fail badge
+        if: steps.samlint.outcome == 'failure'
+        run: |
+          anybadge --overwrite --label "SAM Lint" --value "Failure" --file .github/samlint.svg Failure=red
+      - name: Run sam build
+        id: sambuild
+        run: sam build --parallel
+        continue-on-error: true
+      - name: Pass badge
+        if: steps.sambuild.outcome == 'success'
+        run: |
+          anybadge --overwrite --label "SAM Build" --value "Passing" --file .github/sambuild.svg Passing=green
+      - name: Fail badge
+        if: steps.sambuild.outcome == 'failure'
+        run: |
+          anybadge --overwrite --label "SAM Build" --value "Failure" --file .github/sambuild.svg Failure=red
+      - name: Verify Changed files
+        uses: tj-actions/verify-changed-files@v20
+        id: verify-changed-files
+        with:
+          files: |
+            .github/samlint.svg
+            .github/sambuild.svg
+      - name: 'Commit files'
+        if: steps.verify-changed-files.outputs.files_changed == 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add .github/samlint.svg .github/sambuild.svg
+          git commit -m "Updated CI badges" .github/samlint.svg .github/sambuild.svg
+      - name: 'Push changes'
+        if: steps.verify-changed-files.outputs.files_changed == 'true'
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.github_token }}
+          branch: ${{ github.ref }}
