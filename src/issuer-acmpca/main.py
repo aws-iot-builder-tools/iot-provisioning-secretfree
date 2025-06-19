@@ -31,10 +31,10 @@ def provision_certificate( csr ):
     acmpca = boto3.client('acm-pca')
     ca_arn = os.environ['ACMPCA_CA_ARN']
     cert_validity_days = int(os.environ('CERT_VALIDITY_DAYS'))
-
+    cert_signing_algo = os.environ('CERT_SIGNING_ALGO')
     cert = acmpca.issue_certificate(
         CertificateAuthorityArn=ca_arn,
-        SigningAlgorithm='SHA256WITHRSA',
+        SigningAlgorithm=cert_signing_algo,
         Csr=csr,
         Validity={
             'Value': cert_validity_days,

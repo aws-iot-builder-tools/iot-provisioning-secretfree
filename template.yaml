@@ -27,6 +27,11 @@ Parameters:
     Description: >-
       ACM PCA cert generation: certificate validity in days.
     Type: Integer
+  SigningAlgorithm:
+    Default: SHA256WITHRSA
+    Description: >-
+      Valid ACM PCA signing algorithm used in vending the certificate.
+    Type: String
 
 Outputs:
   ProvisioningTableArn:
@@ -134,6 +139,7 @@ Resources:
           ACMPCA_CA_ARN: !Ref AcmPcaCaArn
           SKUNAME: !Ref SkuName
           CERT_VALIDITY_DAYS: !Ref CertValidityDays
+          CERT_SIGNING_ALGO: !Ref SigningAlgorithm
 
   PerSkuLambdaProvisioningACMPCALogGroup: 
     Type: AWS::Logs::LogGroup
