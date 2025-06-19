@@ -1,5 +1,10 @@
 ## IoT Provisioning Secret-free
 
+![Coverage](.github/coverage.svg)
+![pylint](.github/linting.svg)
+![samlint](.github/samlint.svg)
+![sambuild](.github/sambuild.svg)
+
 This solution enables you to define a process to decouple
 manufacturing from the provisioning process while assuring that
 private secrets do not have the opportunity to be exposed at any point

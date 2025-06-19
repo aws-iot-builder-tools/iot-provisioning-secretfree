@@ -1,0 +1,54 @@
+name: Thingpress Unit Test Code Coverage
+run-name: ${{ github.actor }} invoking coverage
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+    CoverageAndLinting:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v5
+              with:
+                python-version: 3.13
+            - name: 'Install dependencies'
+              run: |
+                pip install -r ./requirements.txt
+                pip install fastjsonschema
+                pip install anybadge
+            - name: 'Run coverage'
+              run: |
+                  export AWS_DEFAULT_REGION=us-east-1
+                  export PYTHONPATH=$(pwd)/src/layer_utils
+                  coverage run --source=src/authorizer,src/issuer-acmpca,src/issuer-iotcore -m pytest
+                  coverage report -m
+                  lintscore=$(pylint -f json2 src/ | python3 -c "import sys, json; print(json.load(sys.stdin)['statistics']['score'])")
+                  anybadge -l pylint -v ${lintscore} -o -f .github/linting.svg 2=red 4=orange 8=yellow 10=green
+            - name: Coverage Badge
+              uses: tj-actions/coverage-badge-py@v2
+              with:
+                output: ".github/coverage.svg"
+            - name: Verify Changed files
+              uses: tj-actions/verify-changed-files@v20
+              id: verify-changed-files
+              with:
+                files: |
+                  .github/coverage.svg
+                  .github/linting.svg
+            - name: 'Commit files'
+              if: steps.verify-changed-files.outputs.files_changed == 'true'
+              run: |
+                git config --local user.email "github-actions[bot]@users.noreply.github.com"
+                git config --local user.name "github-actions[bot]"
+                git add .github/coverage.svg
+                git add .github/linting.svg
+                git commit -m "Updated coverage.svg" .github/coverage.svg .github/linting.svg
+            - name: 'Push changes'
+              if: steps.verify-changed-files.outputs.files_changed == 'true'
+              uses: ad-m/github-push-action@master
+              with:
+                github_token: ${{ secrets.github_token }}
+                branch: ${{ github.ref }}
