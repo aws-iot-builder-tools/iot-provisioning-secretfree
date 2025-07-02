@@ -1,5 +1,5 @@
 -r src/authorizer/requirements.txt
--r src/issuer-acmpca/requirements.txt
+-r src/issuer_acmpca/requirements.txt
 -r src/issuer_iotcore/requirements.txt
 -r test/unit/requirements.txt
 fastjsonschema==2.21.1

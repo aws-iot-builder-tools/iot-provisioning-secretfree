@@ -9,7 +9,7 @@ updates:
     directories:
       - "/"
       - "/src/authorizer/"
-      - "/src/issuer-acmpca/"
+      - "/src/issuer_acmpca/"
       - "/src/issuer_iotcore/"
     schedule:
       interval: "weekly"
