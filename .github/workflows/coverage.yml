@@ -23,7 +23,7 @@ jobs:
               run: |
                   export AWS_DEFAULT_REGION=us-east-1
                   export PYTHONPATH=$(pwd)/src/layer_utils
-                  coverage run --source=src/authorizer,src/issuer-acmpca,src/issuer-iotcore -m pytest
+                  coverage run --source=src/authorizer,src/issuer_acmpca,src/issuer_iotcore -m pytest
                   coverage report -m
                   lintscore=$(pylint -f json2 src/ | python3 -c "import sys, json; print(json.load(sys.stdin)['statistics']['score'])")
                   anybadge -l pylint -v ${lintscore} -o -f .github/linting.svg 2=red 4=orange 8=yellow 10=green
