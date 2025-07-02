@@ -21,7 +21,7 @@ jobs:
           pip install -r ./requirements.txt
           pip install anybadge
       - name: Setup AWS SAM
-        uses: aws-actions/setup-sam@819220f63fb333a9a394dd0a5cab2d8303fd17e2
+        uses: aws-actions/setup-sam@f664fad9e12492edfc187a31f575537dfbb0ff63
       - name: Validate template
         id: samlint
         run: sam validate --lint
