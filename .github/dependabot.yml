@@ -10,6 +10,6 @@ updates:
       - "/"
       - "/src/authorizer/"
       - "/src/issuer-acmpca/"
-      - "/src/issuer-iotcore/"
+      - "/src/issuer_iotcore/"
     schedule:
       interval: "weekly"
