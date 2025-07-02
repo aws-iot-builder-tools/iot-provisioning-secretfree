@@ -10,12 +10,15 @@ import os
 import logging
 import boto3
 from botocore.exceptions import ClientError
-from OpenSSL.crypto import load_certificate_request, FILETYPE_PEM
-
+#from OpenSSL.crypto import load_certificate_request, FILETYPE_PEM
+from cryptography.x509 import load_pem_x509_csr
+from cryptography.x509.oid import NameOID
+from aws_lambda_powertools.utilities.typing import LambdaContext
+from aws_lambda_powertools.utilities.data_classes import SQSEvent
 logger = logging.getLogger()
 logger.setLevel("INFO")
 
-def provision_certificate( csr ):
+def provision_certificate( csr ) -> dict:
     iot = boto3.client('iot')
 
     try:
@@ -25,7 +28,7 @@ def provision_certificate( csr ):
         error_code = error.response['Error']['Code']
         error_message = error.response['Error']['Message']
         logger.error("Certificate creation failed: %s: %s.", error_code, error_message)
-        return False
+        return {}
 
 # The certificate is already deployed.
 def deploy_certificate( certificate ):
@@ -134,11 +137,20 @@ def deploy_policy( certificate_arn, region, account ):
 
     iot.attach_policy(policyName=policy_name, target=certificate_arn)
 
-def lambda_handler(event, context):
+def get_cn_attribute(csr: bytes) -> str:
+    """ Fetch the CN value from the certificate request """
+    req = load_pem_x509_csr(csr)
+    req_name = req.subject
+    req_cn_attr = req_name.get_attributes_for_oid(NameOID.COMMON_NAME)
+    return str(req_cn_attr[0].value)
+
+def lambda_handler(event: dict, context: LambdaContext):
+    """Lambda function main entry point"""
     csr = base64.b64decode(event['headers']['device-csr'])
-    req = load_certificate_request(FILETYPE_PEM, csr)
-    device_id = req.get_subject().CN
-    response = provision_certificate( csr )
+    #req = load_certificate_request(FILETYPE_PEM, csr)
+    response = provision_certificate(csr)
+
+
     region = context.invoked_function_arn.split(":")[3]
     account = context.invoked_function_arn.split(":")[4]
 
@@ -151,7 +163,7 @@ def lambda_handler(event, context):
     certificate_arn = response['certificateArn']
 
     # Create the Thing object and attach to the deployed certificate
-
+    device_id = get_cn_attribute(csr)
     response = deploy_thing( device_id, certificate_arn )
 
     # The entire transaction failed, so report failure.
