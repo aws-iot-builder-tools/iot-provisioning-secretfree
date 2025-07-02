@@ -22,9 +22,6 @@ logger.setLevel("INFO")
 def provision_certificate( csr ):
     """
     Create the Certificate - duration 150 days - very arbitrary
-    TODO: pull the Value up to environment variable driven duration
-    TODO: pull up the SigningAlgorithm to include RSA256 as well as
-          the two ECC curves
     TODO: Figure out a better way to deal with this idempotency token
     """
 

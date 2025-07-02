@@ -48,16 +48,16 @@ def deploy_thing( device_id, certificate_arn ):
     try:
         iot.describe_thing( thingName = device_id )
         thing_name = device_id
-    except:
-        print( "Thing [{}] does not exist. Will create.".format( device_id ) )
-
-    if thing_name is None:
+    except ClientError as error:
+        error_code = error.response['Error']['Code']
+        error_message = error.response['Error']['Message']
+        logger.error("Thing %s does not exist. Will create. %s: %s.", device_id, error_code, error_message)
         try:
             iot.create_thing( thingName = device_id )
             thing_name = device_id
-        except ClientError as error:
-            error_code = error.response['Error']['Code']
-            error_message = error.response['Error']['Message']
+        except ClientError as error_cr:
+            error_code = error_cr.response['Error']['Code']
+            error_message = error_cr.response['Error']['Message']
             logger.error("Thing creation failed: %s: %s.", error_code, error_message)
             return False
 
@@ -128,15 +128,15 @@ def deploy_policy( certificate_arn, region, account ):
     except:
         create_policy = True
 
-    if ( create_policy == True ):
+    if create_policy is True:
         iot.create_policy( policyName = policy_name,
                            policyDocument = policy_document.format( region, account ) )
 
-    iot.attach_policy( policyName = policy_name, target = certificate_arn )
+    iot.attach_policy(policyName=policy_name, target=certificate_arn)
 
 def lambda_handler(event, context):
     csr = base64.b64decode(event['headers']['device-csr'])
-    req = load_certificate_request( FILETYPE_PEM, csr )
+    req = load_certificate_request(FILETYPE_PEM, csr)
     device_id = req.get_subject().CN
     response = provision_certificate( csr )
     region = context.invoked_function_arn.split(":")[3]
