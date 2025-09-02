@@ -1,5 +1,5 @@
 aws_lambda_powertools==3.16.0
 # botocore: intrinsic dependency, but boto3 depends on it as well
-boto3==1.39.1
+boto3==1.40.21
 cryptography==44.0.3
 pyopenssl==25.1.0
