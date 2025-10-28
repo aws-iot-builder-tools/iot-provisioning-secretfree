@@ -1,7 +1,7 @@
 coverage==7.9.1
 coverage-badge==1.1.2
 cryptography==44.0.3
-moto==5.1.6
+moto==5.1.15
 pylint==3.3.7
 pytest==8.4.1
 pytest-socket==0.7.0
